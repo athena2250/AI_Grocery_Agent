@@ -1,0 +1,79 @@
+# Live-eval set for the LLM extractor.
+# Consumed by `pytest -m llm` in backend/tests/test_understanding_live.py.
+# Each case asserts intent + presence of a required ambiguity kind (when any).
+# Rule: ≥90% pass rate required before merging prompt/model changes.
+
+- utterance: "get coriander"
+  intent: ADD_ITEMS
+  requires_ambiguity: product_type
+
+- utterance: "get coriander leaves"
+  intent: ADD_ITEMS
+  requires_no_ambiguity_of_kind: product_type
+
+- utterance: "tomatoes I don't know how much"
+  intent: ADD_ITEMS
+  requires_ambiguity: quantity
+
+- utterance: "add 1kg tomatoes"
+  intent: ADD_ITEMS
+  requires_no_ambiguity_of_kind: quantity
+
+- utterance: "get the usual biscuits"
+  intent: ADD_ITEMS
+  requires_variant_hint: usual
+
+- utterance: "rice is almost finished"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: almost_finished
+
+- utterance: "dal is over"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: out
+
+- utterance: "we're running low on oil"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: running_low
+
+- utterance: "mark parle-g purchased"
+  intent: MARK_PURCHASED
+  requires_purchase_marked: true
+
+- utterance: "I bought the tomatoes"
+  intent: MARK_PURCHASED
+  requires_purchase_marked: true
+
+- utterance: "show me the list"
+  intent: SHOW_LIST
+
+- utterance: "what's on the list"
+  intent: SHOW_LIST
+
+- utterance: "seeds"
+  intent: CLARIFY_RESPONSE
+
+- utterance: "100g"
+  intent: CLARIFY_RESPONSE
+
+- utterance: "add coriander and tomatoes"
+  intent: ADD_ITEMS
+  min_items: 2
+
+- utterance: "get 2 kg atta"
+  intent: ADD_ITEMS
+  requires_no_ambiguity_of_kind: quantity
+
+- utterance: "curd almost khatam"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: almost_finished
+
+- utterance: "buy some biscuits"
+  intent: ADD_ITEMS
+  requires_ambiguity: brand
+
+- utterance: "get the same rice as last time"
+  intent: ADD_ITEMS
+  requires_variant_hint: usual
+
+- utterance: "please add oil"
+  intent: ADD_ITEMS

@@ -15,7 +15,7 @@ Optional `approxQty` + `approxUnit` where the user gives one ("half a packet", "
 
 ## Updates
 
-Natural-language phrases the mock/LLM must map to state changes:
+Natural-language phrases the mock/LLM must map to state changes: (we use telugu in our home)
 
 | Phrase | State |
 |---|---|

@@ -91,8 +91,13 @@ AIResponse {
   clarifications:      Clarification[],        // renders as quick-reply chips
   inventoryUpdates:    InventoryUpdate[],
   purchasesMarked:     string[],
+  resolvedClarificationId?: string,            // which pending question this turn answered
+  chosenOption?:       string,                 // the option picked — drives gated memory writes
+  corrections?:        ItemCorrection[],       // "no, seeds not powder" → swap item + learn
 }
 ```
+
+A `Clarification` may carry `suggestedOption` (the chip pre-filled from household memory): picking it confirms that memory, picking another overrides it. Memory writes happen only in the state layer (reducer in Phase 1, `backend/app/memory/store.py` in Phase 2), never from the AI's own proposals.
 
 Every `ProposedItem` carries `confidence` (high/medium/low), `source` (user / household_memory / purchase_history / guess), and a plain-English `rationale` shown in the Item Detail modal. This transparency is a product requirement — Mom should always be able to see *why* the AI proposed something.
 
