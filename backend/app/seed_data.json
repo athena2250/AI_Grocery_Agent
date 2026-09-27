@@ -1,0 +1,847 @@
+{
+ "_source": "Exported from mobile/src/data/seed.ts. Keep in sync (tests/test_db.py checks product + alias ids).",
+ "products": [
+  {
+   "id": "p_tomato",
+   "name": "Tomatoes",
+   "category": "Vegetables",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_onion",
+   "name": "Onions",
+   "category": "Vegetables",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_potato",
+   "name": "Potatoes",
+   "category": "Vegetables",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_carrot",
+   "name": "Carrots",
+   "category": "Vegetables",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_ginger",
+   "name": "Ginger",
+   "category": "Vegetables",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_garlic",
+   "name": "Garlic",
+   "category": "Vegetables",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_chilli",
+   "name": "Green chilli",
+   "category": "Vegetables",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_coriander_leaves",
+   "name": "Coriander leaves",
+   "category": "Vegetables",
+   "default_unit": "bunch"
+  },
+  {
+   "id": "p_curry_leaves",
+   "name": "Curry leaves",
+   "category": "Vegetables",
+   "default_unit": "bunch"
+  },
+  {
+   "id": "p_spinach",
+   "name": "Spinach",
+   "category": "Vegetables",
+   "default_unit": "bunch"
+  },
+  {
+   "id": "p_banana",
+   "name": "Bananas",
+   "category": "Fruits",
+   "default_unit": "dozen"
+  },
+  {
+   "id": "p_apple",
+   "name": "Apples",
+   "category": "Fruits",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_orange",
+   "name": "Oranges",
+   "category": "Fruits",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_lemon",
+   "name": "Lemons",
+   "category": "Fruits",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_rice",
+   "name": "Rice",
+   "category": "Rice & Grains",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_wheat_atta",
+   "name": "Wheat atta",
+   "category": "Rice & Grains",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_poha",
+   "name": "Poha",
+   "category": "Rice & Grains",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_sooji",
+   "name": "Sooji",
+   "category": "Rice & Grains",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_toor_dal",
+   "name": "Toor dal",
+   "category": "Pulses",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_moong_dal",
+   "name": "Moong dal",
+   "category": "Pulses",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_chana_dal",
+   "name": "Chana dal",
+   "category": "Pulses",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_rajma",
+   "name": "Rajma",
+   "category": "Pulses",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_coriander_seeds",
+   "name": "Coriander seeds",
+   "category": "Spices",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_coriander_powder",
+   "name": "Coriander powder",
+   "category": "Spices",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_turmeric",
+   "name": "Turmeric powder",
+   "category": "Spices",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_chilli_powder",
+   "name": "Red chilli powder",
+   "category": "Spices",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_cumin",
+   "name": "Cumin seeds",
+   "category": "Spices",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_mustard_seeds",
+   "name": "Mustard seeds",
+   "category": "Spices",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_garam_masala",
+   "name": "Garam masala",
+   "category": "Spices",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_salt",
+   "name": "Salt",
+   "category": "Cooking Essentials",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_sugar",
+   "name": "Sugar",
+   "category": "Cooking Essentials",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_sunflower_oil",
+   "name": "Sunflower oil",
+   "category": "Cooking Essentials",
+   "default_unit": "L"
+  },
+  {
+   "id": "p_ghee",
+   "name": "Ghee",
+   "category": "Cooking Essentials",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_milk",
+   "name": "Milk",
+   "category": "Dairy",
+   "default_unit": "L"
+  },
+  {
+   "id": "p_curd",
+   "name": "Curd",
+   "category": "Dairy",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_paneer",
+   "name": "Paneer",
+   "category": "Dairy",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_butter",
+   "name": "Butter",
+   "category": "Dairy",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_bread",
+   "name": "Bread",
+   "category": "Dairy",
+   "default_unit": "loaf"
+  },
+  {
+   "id": "p_biscuits",
+   "name": "Biscuits",
+   "category": "Snacks",
+   "default_unit": "pack"
+  },
+  {
+   "id": "p_namkeen",
+   "name": "Namkeen",
+   "category": "Snacks",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_tea",
+   "name": "Tea",
+   "category": "Beverages",
+   "default_unit": "g"
+  },
+  {
+   "id": "p_coffee",
+   "name": "Coffee",
+   "category": "Beverages",
+   "default_unit": "g"
+  }
+ ],
+ "aliases": [
+  {
+   "alias": "coriander",
+   "product_id": "p_coriander_leaves",
+   "disambiguation_group": "coriander"
+  },
+  {
+   "alias": "coriander",
+   "product_id": "p_coriander_seeds",
+   "disambiguation_group": "coriander"
+  },
+  {
+   "alias": "coriander",
+   "product_id": "p_coriander_powder",
+   "disambiguation_group": "coriander"
+  },
+  {
+   "alias": "dhania",
+   "product_id": "p_coriander_leaves",
+   "disambiguation_group": "coriander"
+  },
+  {
+   "alias": "dhania",
+   "product_id": "p_coriander_seeds",
+   "disambiguation_group": "coriander"
+  },
+  {
+   "alias": "coriander leaves",
+   "product_id": "p_coriander_leaves"
+  },
+  {
+   "alias": "coriander seeds",
+   "product_id": "p_coriander_seeds"
+  },
+  {
+   "alias": "coriander powder",
+   "product_id": "p_coriander_powder"
+  },
+  {
+   "alias": "tomato",
+   "product_id": "p_tomato"
+  },
+  {
+   "alias": "tomatoes",
+   "product_id": "p_tomato"
+  },
+  {
+   "alias": "onion",
+   "product_id": "p_onion"
+  },
+  {
+   "alias": "onions",
+   "product_id": "p_onion"
+  },
+  {
+   "alias": "potato",
+   "product_id": "p_potato"
+  },
+  {
+   "alias": "potatoes",
+   "product_id": "p_potato"
+  },
+  {
+   "alias": "aloo",
+   "product_id": "p_potato"
+  },
+  {
+   "alias": "ginger",
+   "product_id": "p_ginger"
+  },
+  {
+   "alias": "garlic",
+   "product_id": "p_garlic"
+  },
+  {
+   "alias": "chilli",
+   "product_id": "p_chilli"
+  },
+  {
+   "alias": "green chilli",
+   "product_id": "p_chilli"
+  },
+  {
+   "alias": "banana",
+   "product_id": "p_banana"
+  },
+  {
+   "alias": "bananas",
+   "product_id": "p_banana"
+  },
+  {
+   "alias": "apple",
+   "product_id": "p_apple"
+  },
+  {
+   "alias": "apples",
+   "product_id": "p_apple"
+  },
+  {
+   "alias": "lemon",
+   "product_id": "p_lemon"
+  },
+  {
+   "alias": "lemons",
+   "product_id": "p_lemon"
+  },
+  {
+   "alias": "rice",
+   "product_id": "p_rice"
+  },
+  {
+   "alias": "chawal",
+   "product_id": "p_rice"
+  },
+  {
+   "alias": "atta",
+   "product_id": "p_wheat_atta"
+  },
+  {
+   "alias": "wheat",
+   "product_id": "p_wheat_atta"
+  },
+  {
+   "alias": "poha",
+   "product_id": "p_poha"
+  },
+  {
+   "alias": "sooji",
+   "product_id": "p_sooji"
+  },
+  {
+   "alias": "toor dal",
+   "product_id": "p_toor_dal"
+  },
+  {
+   "alias": "dal",
+   "product_id": "p_toor_dal"
+  },
+  {
+   "alias": "moong dal",
+   "product_id": "p_moong_dal"
+  },
+  {
+   "alias": "chana dal",
+   "product_id": "p_chana_dal"
+  },
+  {
+   "alias": "rajma",
+   "product_id": "p_rajma"
+  },
+  {
+   "alias": "turmeric",
+   "product_id": "p_turmeric"
+  },
+  {
+   "alias": "haldi",
+   "product_id": "p_turmeric"
+  },
+  {
+   "alias": "red chilli powder",
+   "product_id": "p_chilli_powder"
+  },
+  {
+   "alias": "chilli powder",
+   "product_id": "p_chilli_powder"
+  },
+  {
+   "alias": "cumin",
+   "product_id": "p_cumin"
+  },
+  {
+   "alias": "jeera",
+   "product_id": "p_cumin"
+  },
+  {
+   "alias": "mustard",
+   "product_id": "p_mustard_seeds"
+  },
+  {
+   "alias": "rai",
+   "product_id": "p_mustard_seeds"
+  },
+  {
+   "alias": "garam masala",
+   "product_id": "p_garam_masala"
+  },
+  {
+   "alias": "salt",
+   "product_id": "p_salt"
+  },
+  {
+   "alias": "namak",
+   "product_id": "p_salt"
+  },
+  {
+   "alias": "sugar",
+   "product_id": "p_sugar"
+  },
+  {
+   "alias": "cheeni",
+   "product_id": "p_sugar"
+  },
+  {
+   "alias": "oil",
+   "product_id": "p_sunflower_oil"
+  },
+  {
+   "alias": "sunflower oil",
+   "product_id": "p_sunflower_oil"
+  },
+  {
+   "alias": "ghee",
+   "product_id": "p_ghee"
+  },
+  {
+   "alias": "milk",
+   "product_id": "p_milk"
+  },
+  {
+   "alias": "doodh",
+   "product_id": "p_milk"
+  },
+  {
+   "alias": "curd",
+   "product_id": "p_curd"
+  },
+  {
+   "alias": "dahi",
+   "product_id": "p_curd"
+  },
+  {
+   "alias": "paneer",
+   "product_id": "p_paneer"
+  },
+  {
+   "alias": "butter",
+   "product_id": "p_butter"
+  },
+  {
+   "alias": "biscuits",
+   "product_id": "p_biscuits"
+  },
+  {
+   "alias": "biscuit",
+   "product_id": "p_biscuits"
+  },
+  {
+   "alias": "namkeen",
+   "product_id": "p_namkeen"
+  },
+  {
+   "alias": "bread",
+   "product_id": "p_bread"
+  },
+  {
+   "alias": "tea",
+   "product_id": "p_tea"
+  },
+  {
+   "alias": "chai",
+   "product_id": "p_tea"
+  },
+  {
+   "alias": "coffee",
+   "product_id": "p_coffee"
+  },
+  {
+   "alias": "spinach",
+   "product_id": "p_spinach"
+  },
+  {
+   "alias": "palak",
+   "product_id": "p_spinach"
+  },
+  {
+   "alias": "curry leaves",
+   "product_id": "p_curry_leaves"
+  },
+  {
+   "alias": "kadi patta",
+   "product_id": "p_curry_leaves"
+  },
+  {
+   "alias": "carrot",
+   "product_id": "p_carrot"
+  },
+  {
+   "alias": "carrots",
+   "product_id": "p_carrot"
+  },
+  {
+   "alias": "biyyam",
+   "product_id": "p_rice"
+  },
+  {
+   "alias": "pappu",
+   "product_id": "p_toor_dal"
+  },
+  {
+   "alias": "kandi pappu",
+   "product_id": "p_toor_dal"
+  },
+  {
+   "alias": "pesara pappu",
+   "product_id": "p_moong_dal"
+  },
+  {
+   "alias": "senaga pappu",
+   "product_id": "p_chana_dal"
+  },
+  {
+   "alias": "nune",
+   "product_id": "p_sunflower_oil"
+  },
+  {
+   "alias": "neyyi",
+   "product_id": "p_ghee"
+  },
+  {
+   "alias": "perugu",
+   "product_id": "p_curd"
+  },
+  {
+   "alias": "palu",
+   "product_id": "p_milk"
+  },
+  {
+   "alias": "uppu",
+   "product_id": "p_salt"
+  },
+  {
+   "alias": "chakkera",
+   "product_id": "p_sugar"
+  },
+  {
+   "alias": "pasupu",
+   "product_id": "p_turmeric"
+  },
+  {
+   "alias": "karam",
+   "product_id": "p_chilli_powder"
+  },
+  {
+   "alias": "jeelakarra",
+   "product_id": "p_cumin"
+  },
+  {
+   "alias": "avalu",
+   "product_id": "p_mustard_seeds"
+  },
+  {
+   "alias": "dhaniyalu",
+   "product_id": "p_coriander_seeds"
+  },
+  {
+   "alias": "kothimeera",
+   "product_id": "p_coriander_leaves"
+  },
+  {
+   "alias": "kottimeera",
+   "product_id": "p_coriander_leaves"
+  },
+  {
+   "alias": "karivepaku",
+   "product_id": "p_curry_leaves"
+  },
+  {
+   "alias": "allam",
+   "product_id": "p_ginger"
+  },
+  {
+   "alias": "vellulli",
+   "product_id": "p_garlic"
+  },
+  {
+   "alias": "pachimirchi",
+   "product_id": "p_chilli"
+  },
+  {
+   "alias": "ullipayalu",
+   "product_id": "p_onion"
+  },
+  {
+   "alias": "tamatalu",
+   "product_id": "p_tomato"
+  },
+  {
+   "alias": "bangaladumpa",
+   "product_id": "p_potato"
+  },
+  {
+   "alias": "atukulu",
+   "product_id": "p_poha"
+  },
+  {
+   "alias": "ravva",
+   "product_id": "p_sooji"
+  }
+ ],
+ "preferences": [
+  {
+   "product_id": "p_rice",
+   "preferred_brand": "Aashirvaad",
+   "preferred_variant": "Sona Masoori",
+   "typical_qty": 5,
+   "typical_unit": "kg",
+   "typical_interval_days": 30,
+   "confidence": 0.95,
+   "times_confirmed": 6
+  },
+  {
+   "product_id": "p_tomato",
+   "typical_qty": 1,
+   "typical_unit": "kg",
+   "typical_interval_days": 5,
+   "confidence": 0.9,
+   "times_confirmed": 5
+  },
+  {
+   "product_id": "p_coriander_seeds",
+   "typical_qty": 100,
+   "typical_unit": "g",
+   "confidence": 0.7,
+   "times_confirmed": 2
+  },
+  {
+   "product_id": "p_toor_dal",
+   "preferred_brand": "Tata Sampann",
+   "typical_qty": 1,
+   "typical_unit": "kg",
+   "typical_interval_days": 21,
+   "confidence": 0.85,
+   "times_confirmed": 4
+  },
+  {
+   "product_id": "p_sunflower_oil",
+   "preferred_brand": "Fortune",
+   "typical_qty": 1,
+   "typical_unit": "L",
+   "confidence": 0.8,
+   "times_confirmed": 3
+  },
+  {
+   "product_id": "p_curd",
+   "preferred_brand": "Amul",
+   "typical_qty": 400,
+   "typical_unit": "g",
+   "confidence": 0.75,
+   "times_confirmed": 3
+  }
+ ],
+ "alias_preferences": [
+  {
+   "disambiguation_group": "coriander",
+   "product_id": "p_coriander_seeds",
+   "confidence": 0.7,
+   "times_confirmed": 2,
+   "times_overridden": 0
+  }
+ ],
+ "inventory": [
+  {
+   "product_id": "p_rice",
+   "state": "available",
+   "approx_qty": 2,
+   "approx_unit": "kg"
+  },
+  {
+   "product_id": "p_toor_dal",
+   "state": "running_low",
+   "approx_qty": 200,
+   "approx_unit": "g"
+  },
+  {
+   "product_id": "p_sunflower_oil",
+   "state": "available",
+   "approx_qty": 500,
+   "approx_unit": "ml"
+  }
+ ],
+ "history": [
+  {
+   "id": "h3",
+   "product_id": "p_curd",
+   "product": "Curd",
+   "qty": 400.0,
+   "unit": "g",
+   "brand": "Amul",
+   "days_ago": 8
+  },
+  {
+   "id": "h4",
+   "product_id": "p_onion",
+   "product": "Onions",
+   "qty": 1.0,
+   "unit": "kg",
+   "brand": null,
+   "days_ago": 11
+  },
+  {
+   "id": "h5",
+   "product_id": "p_curd",
+   "product": "Curd",
+   "qty": 400.0,
+   "unit": "g",
+   "brand": "Amul",
+   "days_ago": 15
+  },
+  {
+   "id": "h6",
+   "product_id": "p_toor_dal",
+   "product": "Toor dal",
+   "qty": 1.0,
+   "unit": "kg",
+   "brand": "Tata Sampann",
+   "days_ago": 18
+  },
+  {
+   "id": "h7",
+   "product_id": "p_onion",
+   "product": "Onions",
+   "qty": 1.0,
+   "unit": "kg",
+   "brand": null,
+   "days_ago": 21
+  },
+  {
+   "id": "h8",
+   "product_id": "p_curd",
+   "product": "Curd",
+   "qty": 400.0,
+   "unit": "g",
+   "brand": "Amul",
+   "days_ago": 22
+  },
+  {
+   "id": "h9",
+   "product_id": "p_curd",
+   "product": "Curd",
+   "qty": 400.0,
+   "unit": "g",
+   "brand": "Amul",
+   "days_ago": 29
+  },
+  {
+   "id": "h10",
+   "product_id": "p_onion",
+   "product": "Onions",
+   "qty": 1.0,
+   "unit": "kg",
+   "brand": null,
+   "days_ago": 32
+  },
+  {
+   "id": "h11",
+   "product_id": "p_toor_dal",
+   "product": "Toor dal",
+   "qty": 1.0,
+   "unit": "kg",
+   "brand": "Tata Sampann",
+   "days_ago": 39
+  },
+  {
+   "id": "h12",
+   "product_id": "p_toor_dal",
+   "product": "Toor dal",
+   "qty": 1.0,
+   "unit": "kg",
+   "brand": "Tata Sampann",
+   "days_ago": 61
+  },
+  {
+   "id": "h1",
+   "product_id": "p_biscuits",
+   "product": "Biscuits",
+   "qty": 2.0,
+   "unit": "pack",
+   "brand": "Parle-G",
+   "days_ago": 7
+  },
+  {
+   "id": "h2",
+   "product_id": "p_milk",
+   "product": "Milk",
+   "qty": 1.0,
+   "unit": "L",
+   "brand": "Amul",
+   "days_ago": 2
+  }
+ ]
+}

@@ -12,6 +12,16 @@ An intelligent household grocery assistant whose primary user is a non-technical
 4. Produce a clean, category-organized grocery list.
 5. Wait for human approval before finalizing. Update memory only from confirmed actions.
 
+### Scope grew (2026-09-27): family household assistant
+
+Every message a family member (Mom, Dad, the user) sends becomes a **post** in a family feed, shown to the others as a pop-up. Before a post goes out, the AI checks it is **complete** and asks the author questions until it is:
+
+- **Grocery:** every item needs item, quantity + unit, expected market rate, and when it's needed at home.
+- **Tasks / alerts:** plumbing, repairs, maintenance, ticket booking — need what, who does it, by when. Alerts can **repeat** until the person acknowledges.
+- **Bills:** electricity ("current"), internet, maintenance … — which bill, amount, due date, who pays.
+
+The LLM only extracts fields. A deterministic check against the `post_kind_field` table decides what is missing (`backend/app/feed/completeness.py`), and `feed/store.publish()` refuses an incomplete post whoever wrote it. See `docs/DATABASE.md`.
+
 ## Guiding principles (do not violate)
 
 1. **Optimize for understanding Mom, not for filling a form.** Real-world Mom-speak is incomplete and ambiguous.
@@ -48,7 +58,7 @@ A functional Expo (React Native + TypeScript) app on the user's phone that prove
 
 ### Phase 2 — Real backend
 
-Python 3.11 + FastAPI + SQLite (SQLModel) + Ollama running Qwen 2.5 7B (or Llama 3.1 8B) as a local LLM. **One LLM call per user turn** produces structured JSON (intent + items + ambiguities + inventory updates); a deterministic orchestrator handles the rest. Mobile app switches from `MockAIService` to `HttpAIService` via a factory — **no UI changes**.
+Python 3.11 + FastAPI + PostgreSQL (SQLModel; local DB `ai_grocery_agent`, SQLite in tests) + Ollama running Qwen 2.5 7B (or Llama 3.1 8B) as a local LLM. **One LLM call per user turn** produces structured JSON (intent + items + ambiguities + inventory updates); a deterministic orchestrator handles the rest. Mobile app switches from `MockAIService` to `HttpAIService` via a factory — **no UI changes**.
 
 The JSON shape returned by the mock in Phase 1 is deliberately identical to what the FastAPI `/chat` endpoint will return in Phase 2.
 
@@ -103,7 +113,9 @@ Every `ProposedItem` carries `confidence` (high/medium/low), `source` (user / ho
 
 ## Data model (Phase 1 in TypeScript; Phase 2 mirrors this in SQL)
 
-Entities: `Product`, `ProductAlias` (with `disambiguationGroup` for cases like coriander), `Preference` (household memory), `InventoryEntry`, `ListItem`, `Purchase`, `Turn` (conversation log).
+Full schema (32 tables: people, catalog, feed, conversation, grocery, tasks, bills): `docs/DATABASE.md`. Create + seed with `cd backend && .venv/bin/python -m app.seed`.
+
+Grocery entities: `Product`, `ProductAlias` (with `disambiguationGroup` for cases like coriander), `Preference` (household memory), `InventoryEntry`, `ListItem`, `Purchase`, `Turn` (conversation log).
 
 Field names in TS match the future SQL column names exactly so `HttpAIService` needs zero adapter code.
 
