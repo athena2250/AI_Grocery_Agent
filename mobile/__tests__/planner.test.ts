@@ -10,6 +10,7 @@ import {
   mergeIntoDraft,
   mergeQty,
   pendingItems,
+  storeOrder,
   visibleItems,
 } from '../src/state/planner';
 import { initialHouseholdState, seedProducts } from '../src/data/seed';
@@ -141,6 +142,16 @@ test('groupByCategory: fixed store-walk order, add order within a section', () =
     ['Cooking Essentials', ['Salt']],
     ['Beverages', ['Tea']],
   ]);
+});
+
+test('storeOrder: per-store aisle sequence — same list, different sort', () => {
+  const order = storeOrder(['Dairy', 'Beverages', 'Not a category', 'Dairy', 'Vegetables']);
+  expect(order.slice(0, 4)).toEqual(['Dairy', 'Beverages', 'Vegetables', 'Fruits']);
+  expect([...order].sort()).toEqual([...CATEGORY_ORDER].sort());
+
+  const items = plan([],
+    proposal('p_tea', 250, 'g'), proposal('p_onion', 1, 'kg'), proposal('p_milk', 1, 'L'), proposal('p_salt', 1, 'kg'));
+  expect(groupByCategory(items, order).map((s) => s.title)).toEqual(['Dairy', 'Beverages', 'Vegetables', 'Cooking Essentials']);
 });
 
 describe('low-stock proposals', () => {

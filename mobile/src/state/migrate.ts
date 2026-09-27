@@ -71,6 +71,7 @@ export function migrateState(
     list: raw.list ?? { id: 'list_1', status: 'draft', createdAt: new Date().toISOString() },
     listItems: (raw.listItems ?? []).map((li) => migrateListItem(li, products)),
     dismissedRestocks: raw.dismissedRestocks ?? {},
+    dismissedPredictions: raw.dismissedPredictions ?? {},
     preferences: (raw.preferences ?? []).map(migratePreference),
     aliasPreferences: raw.aliasPreferences ?? [],
     inventory: (raw.inventory ?? []).map(migrateInventory),

@@ -30,6 +30,7 @@ from app.planner import (
     mark_purchased,
     merge_qty,
     remove_items,
+    store_order,
     visible_items,
 )
 from app.understanding.schema import InventoryStateLiteral as S
@@ -258,6 +259,18 @@ def test_unknown_categories_sort_last() -> None:
 
     groups = group_by_category([Row("Misc"), Row("Snacks"), Row("Vegetables")])
     assert [c for c, _ in groups] == ["Vegetables", "Snacks", "Misc"]
+
+
+def test_store_order_is_the_same_list_sorted_differently(
+    session: Session, glist: GroceryList
+) -> None:
+    order = store_order(["Dairy", "Beverages", "Not a category", "Dairy", "Vegetables"])
+    assert [c.value for c in order[:4]] == ["Dairy", "Beverages", "Vegetables", "Fruits"]
+    assert sorted(order) == sorted(CATEGORY_ORDER)
+
+    add(session, glist, *(item(pid, 1, "kg") for pid in ["p_tea", "p_onion", "p_milk", "p_salt"]))
+    view = grouped_view(session, glist.id, order)
+    assert [cat for cat, _ in view] == ["Dairy", "Beverages", "Vegetables", "Cooking Essentials"]
 
 
 # --- Low-stock proposals ---------------------------------------------------------

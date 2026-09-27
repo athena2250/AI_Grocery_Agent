@@ -20,6 +20,7 @@ interface Ctx {
   approveList: () => void;
   acceptRestock: (proposal: ProposedItem) => void;
   dismissRestock: (productId: string) => void;
+  dismissPrediction: (productId: string) => void;
   reset: () => Promise<void>;
   buildChatContext: () => ChatContext;
 }
@@ -64,6 +65,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const approveList = useCallback(() => dispatch({ type: 'APPROVE_LIST' }), []);
   const acceptRestock = useCallback((proposal: ProposedItem) => dispatch({ type: 'ACCEPT_RESTOCK', proposal }), []);
   const dismissRestock = useCallback((productId: string) => dispatch({ type: 'DISMISS_RESTOCK', productId }), []);
+  const dismissPrediction = useCallback((productId: string) => dispatch({ type: 'DISMISS_PREDICTION', productId }), []);
   const reset = useCallback(async () => {
     await clearPersisted();
     dispatch({ type: 'RESET' });
@@ -74,10 +76,10 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(() => ({
     state, hydrated, addUserTurn, addAgentTurn, applyAI,
     markPurchased, removeItem, setInventory, saveAsUsual,
-    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, reset, buildChatContext,
+    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, dismissPrediction, reset, buildChatContext,
   }), [
     state, hydrated, addUserTurn, addAgentTurn, applyAI, markPurchased, removeItem, setInventory, saveAsUsual,
-    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, reset, buildChatContext,
+    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, dismissPrediction, reset, buildChatContext,
   ]);
 
   return <HouseholdCtx.Provider value={value}>{children}</HouseholdCtx.Provider>;

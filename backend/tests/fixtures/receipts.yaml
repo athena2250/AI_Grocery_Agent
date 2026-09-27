@@ -1,0 +1,154 @@
+# Receipt fixtures for plan_09 (backend/tests/test_receipts.py).
+#
+# Each case: the OCR text of one receipt, what the LLM returned for it (fed in
+# via a fake client), and the expected parse after the deterministic rules.
+# Some `llm_output`s contain deliberate model mistakes (an invented price, an
+# invented line, an invented qty) — the expected parse shows them caught.
+#
+# These are synthetic transcriptions shaped like real Indian till receipts.
+# Replace / extend with real receipt OCR as photos become available.
+
+- name: dmart_with_tax_and_discount
+  ocr_text: |
+    D-MART
+    Avenue Supermarts Ltd, Kukatpally
+    Bill No 4471    Dt 21/09/2026 18:42
+    ITEM                QTY    AMT
+    TOOR DAL 1KG         1   145.00
+    TOMATO            1.000 KG  40.00
+    PARLE-G 250G         2    50.00
+    AASHIR ATTA 5KG      1   265.00
+    CGST 2.5%                 6.25
+    SGST 2.5%                 6.25
+    DISCOUNT                -10.00
+    ROUND OFF                -0.50
+    TOTAL                   502.00
+  llm_output:
+    readable: true
+    lines:
+      - {raw_line: "TOOR DAL 1KG         1   145.00", product_guess: toor dal, qty: 1, unit: pcs, package_size: 1 kg, price: 145.0, confidence: high}
+      - {raw_line: "TOMATO            1.000 KG  40.00", product_guess: tomatoes, qty: 1, unit: kg, price: 40.0, confidence: high}
+      - {raw_line: "PARLE-G 250G         2    50.00", product_guess: biscuits, brand: Parle-G, qty: 2, unit: pack, package_size: 250 g, price: 50.0, confidence: high}
+      - {raw_line: "AASHIR ATTA 5KG      1   265.00", product_guess: wheat atta, brand: Aashirvaad, qty: 1, unit: pcs, package_size: 5 kg, price: 265.0, confidence: medium}
+      - {raw_line: "CGST 2.5%                 6.25", product_guess: null, price: 6.25, confidence: high}
+      - {raw_line: "SGST 2.5%                 6.25", product_guess: null, price: 6.25, confidence: high}
+      - {raw_line: "DISCOUNT                -10.00", product_guess: null, confidence: high}
+      # Model mislabels round-off as an item — the non-item rule still skips it.
+      - {raw_line: "ROUND OFF                -0.50", product_guess: round off, confidence: low}
+      - {raw_line: "TOTAL                   502.00", product_guess: null, price: 502.0, confidence: high}
+  expected:
+    store: DMart
+    purchased_at: 2026-09-21
+    lines:
+      - {product_id: p_toor_dal, qty: 1, unit: pcs, price: 145.0, brand: null, status: ready}
+      - {product_id: p_tomato, qty: 1, unit: kg, price: 40.0, brand: null, status: ready}
+      - {product_id: p_biscuits, qty: 2, unit: pack, price: 50.0, brand: Parle-G, status: ready}
+      - {product_id: p_wheat_atta, qty: 1, unit: pcs, price: 265.0, brand: Aashirvaad, status: ready}
+
+- name: reliance_fresh_bilingual
+  ocr_text: |
+    RELIANCE FRESH
+    Store 0213  Ameerpet
+    Date: 18-09-26   Time: 09:15
+    प्याज़             1.000 KG   38.00
+    AMUL TAAZA MILK 500ML   2   54.00
+    BANANA ROBUSTA   1 DZ       60.00
+    Sub Total                  152.00
+    Total                      152.00
+  llm_output:
+    readable: true
+    lines:
+      - {raw_line: "प्याज़             1.000 KG   38.00", product_guess: onions, qty: 1, unit: kg, price: 38.0, confidence: high}
+      # Price 56.00 is not printed on the line → cleared.
+      - {raw_line: "AMUL TAAZA MILK 500ML   2   54.00", product_guess: milk, brand: Amul, qty: 2, unit: pack, package_size: 500 ml, price: 56.0, confidence: high}
+      - {raw_line: "BANANA ROBUSTA   1 DZ       60.00", product_guess: bananas, qty: 1, unit: dozen, price: 60.0, confidence: high}
+      - {raw_line: "Sub Total                  152.00", product_guess: null, price: 152.0, confidence: high}
+      - {raw_line: "Total                      152.00", product_guess: null, price: 152.0, confidence: high}
+  expected:
+    store: Reliance Fresh
+    purchased_at: 2026-09-18
+    lines:
+      - {product_id: p_onion, qty: 1, unit: kg, price: 38.0, brand: null, status: ready}
+      - {product_id: p_milk, qty: 2, unit: pack, price: null, brand: Amul, status: ready}
+      - {product_id: p_banana, qty: 1, unit: dozen, price: 60.0, brand: null, status: ready}
+
+- name: greenbazaar_coriander_ambiguity
+  ocr_text: |
+    GREEN BAZAAR ORGANICS
+    Jubilee Hills, Hyderabad
+    25/09/2026
+    CORIANDER 100G     1    22.00
+    CORR PWD 100G      1    30.00
+    HALDI 200G         1    48.00
+    GST INCL                 4.80
+    TOTAL                  100.00
+  llm_output:
+    readable: true
+    lines:
+      # "CORIANDER" alone is leaves / seeds / powder — must be asked.
+      - {raw_line: "CORIANDER 100G     1    22.00", product_guess: coriander, qty: 1, unit: pcs, package_size: 100 g, price: 22.0, confidence: medium}
+      - {raw_line: "CORR PWD 100G      1    30.00", product_guess: coriander powder, qty: 1, unit: pcs, package_size: 100 g, price: 30.0, confidence: medium}
+      - {raw_line: "HALDI 200G         1    48.00", product_guess: turmeric powder, qty: 1, unit: pcs, package_size: 200 g, price: 48.0, confidence: high}
+      - {raw_line: "GST INCL                 4.80", product_guess: null, confidence: high}
+      - {raw_line: "TOTAL                  100.00", product_guess: null, confidence: high}
+  expected:
+    store: GreenBazaar
+    purchased_at: 2026-09-25
+    lines:
+      - {product_id: null, qty: 1, unit: pcs, price: 22.0, status: needs_review, review_kind: product_type}
+      - {product_id: p_coriander_powder, qty: 1, unit: pcs, price: 30.0, status: ready}
+      - {product_id: p_turmeric, qty: 1, unit: pcs, price: 48.0, status: ready}
+
+- name: unknown_kirana_store
+  ocr_text: |
+    SRI LAKSHMI KIRANA STORES
+    Ph 98480 12345
+    RICE SONA MASOORI 10KG   1   620.00
+    SUNFLWR OIL 1L           2   290.00
+    XYZ SPL MIX              1    45.00
+    NET AMOUNT               955.00
+  llm_output:
+    readable: true
+    lines:
+      - {raw_line: "RICE SONA MASOORI 10KG   1   620.00", product_guess: rice, qty: 1, unit: pcs, package_size: 10 kg, price: 620.0, confidence: high}
+      - {raw_line: "SUNFLWR OIL 1L           2   290.00", product_guess: sunflower oil, qty: 2, unit: pcs, package_size: 1 L, price: 290.0, confidence: medium}
+      # Unknown to the catalog → "What is ...?"
+      - {raw_line: "XYZ SPL MIX              1    45.00", product_guess: namkeen mixture, qty: 1, unit: pcs, price: 45.0, confidence: low}
+      # Hallucinated — not on the receipt at all → dropped.
+      - {raw_line: "SUGAR 1KG                1    44.00", product_guess: sugar, qty: 1, unit: kg, price: 44.0, confidence: high}
+      - {raw_line: "NET AMOUNT               955.00", product_guess: null, confidence: high}
+  expected:
+    store: null
+    purchased_at: null
+    lines:
+      - {product_id: p_rice, qty: 1, unit: pcs, price: 620.0, status: ready}
+      - {product_id: p_sunflower_oil, qty: 2, unit: pcs, price: 290.0, status: ready}
+      - {product_id: null, qty: 1, unit: pcs, price: 45.0, status: needs_review, review_kind: product_identity}
+
+- name: more_invented_qty_and_low_confidence
+  ocr_text: |
+    more.
+    More Retail Pvt Ltd - Madhapur
+    Inv Dt: 2026-09-26
+    NANDINI CURD 400G          72.00
+    T.B. DUST 250G      1     140.00
+    TATA SALT 1KG       1      28.00
+    YOU SAVED                  12.00
+    TOTAL                     240.00
+  llm_output:
+    readable: true
+    lines:
+      # qty 2 is not printed → cleared → "How much curd did you buy?"
+      - {raw_line: "NANDINI CURD 400G          72.00", product_guess: curd, brand: Nandini, qty: 2, unit: pack, package_size: 400 g, price: 72.0, confidence: high}
+      # Model unsure → "Is ... tea?"
+      - {raw_line: "T.B. DUST 250G      1     140.00", product_guess: tea, qty: 1, unit: pcs, package_size: 250 g, price: 140.0, confidence: low}
+      - {raw_line: "TATA SALT 1KG       1      28.00", product_guess: salt, brand: Tata, qty: 1, unit: pcs, package_size: 1 kg, price: 28.0, confidence: high}
+      - {raw_line: "YOU SAVED                  12.00", product_guess: null, confidence: high}
+      - {raw_line: "TOTAL                     240.00", product_guess: null, confidence: high}
+  expected:
+    store: More
+    purchased_at: 2026-09-26
+    lines:
+      - {product_id: p_curd, qty: null, unit: null, price: 72.0, brand: Nandini, status: needs_review, review_kind: quantity}
+      - {product_id: p_tea, qty: 1, unit: pcs, price: 140.0, status: needs_review, review_kind: product_identity}
+      - {product_id: p_salt, qty: 1, unit: pcs, price: 28.0, brand: Tata, status: ready}

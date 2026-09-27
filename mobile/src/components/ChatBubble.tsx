@@ -5,17 +5,19 @@ import { QuickReplyChip } from './QuickReplyChip';
 
 interface Props {
   role: 'user' | 'agent';
+  /** A quiet, app-initiated note (plan_10 suggestions) rather than a reply. */
+  system?: boolean;
   text: string;
   chips?: string[];
   onChipPress?: (label: string) => void;
 }
 
-export function ChatBubble({ role, text, chips, onChipPress }: Props) {
+export function ChatBubble({ role, text, system, chips, onChipPress }: Props) {
   const isUser = role === 'user';
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
-      <View style={[styles.bubble, isUser ? styles.userBubble : styles.agentBubble]}>
-        <Text style={styles.text}>{text}</Text>
+      <View style={[styles.bubble, isUser ? styles.userBubble : styles.agentBubble, system && styles.systemBubble]}>
+        <Text style={[styles.text, system && styles.systemText]}>{text}</Text>
         {chips && chips.length > 0 && (
           <View style={styles.chipRow}>
             {chips.map((c) => (
@@ -45,6 +47,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
+  systemBubble: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.surfaceAlt },
   text: { color: theme.colors.text, fontSize: theme.font.body },
+  systemText: { color: theme.colors.textMuted },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
 });

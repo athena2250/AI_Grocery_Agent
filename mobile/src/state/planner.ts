@@ -134,20 +134,35 @@ export function mergeIntoDraft(
 export const visibleItems = (items: ListItem[]) => items.filter((li) => li.status !== 'removed');
 export const pendingItems = (items: ListItem[]) => items.filter((li) => li.status === 'pending');
 
-const categoryRank = (c: Category) => {
-  const i = CATEGORY_ORDER.indexOf(c);
-  return i < 0 ? CATEGORY_ORDER.length : i;
-};
+/**
+ * A store's walk order from the categories Mom listed, in aisle order (plan_11).
+ * Unknown names and repeats are dropped; unlisted categories follow in the
+ * default order, so every section still has a place.
+ */
+export function storeOrder(aisles: string[]): Category[] {
+  const listed = aisles.filter((a): a is Category => CATEGORY_ORDER.includes(a as Category));
+  return [...new Set([...listed, ...CATEGORY_ORDER])];
+}
 
-/** Sections in the fixed category order; within a section, items keep the order they were added. */
-export function groupByCategory(items: ListItem[]): { title: Category; data: ListItem[] }[] {
+/**
+ * Sections in `order` (default: the fixed store walk; per-store via `storeOrder`);
+ * within a section, items keep the order they were added.
+ */
+export function groupByCategory(
+  items: ListItem[],
+  order: Category[] = CATEGORY_ORDER,
+): { title: Category; data: ListItem[] }[] {
+  const rank = (c: Category) => {
+    const i = order.indexOf(c);
+    return i < 0 ? order.length : i;
+  };
   const byCat = new Map<Category, ListItem[]>();
   for (const li of items) {
     if (!byCat.has(li.category)) byCat.set(li.category, []);
     byCat.get(li.category)!.push(li);
   }
   return [...byCat.entries()]
-    .sort(([a], [b]) => categoryRank(a) - categoryRank(b))
+    .sort(([a], [b]) => rank(a) - rank(b))
     .map(([title, data]) => ({ title, data }));
 }
 

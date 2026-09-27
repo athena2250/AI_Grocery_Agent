@@ -33,9 +33,10 @@ export type Action =
   | { type: 'FORGET_PREFERENCE'; productId: string }
   | { type: 'FORGET_ALIAS_PREFERENCE'; disambiguationGroup: string }
   | { type: 'APPROVE_LIST' }
-  /** Mom tapped Add on a pantry restock suggestion (planner `lowStockProposals`). */
+  /** Mom tapped Add on a suggestion — a pantry restock (planner `lowStockProposals`) or a purchase prediction (plan_10). */
   | { type: 'ACCEPT_RESTOCK'; proposal: ProposedItem }
   | { type: 'DISMISS_RESTOCK'; productId: string }
+  | { type: 'DISMISS_PREDICTION'; productId: string }
   | { type: 'RESET' };
 
 let _c = 0;
@@ -231,6 +232,8 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
     }
     case 'DISMISS_RESTOCK':
       return { ...state, dismissedRestocks: dismissRestock(state, state.inventory, action.productId) };
+    case 'DISMISS_PREDICTION':
+      return { ...state, dismissedPredictions: { ...state.dismissedPredictions, [action.productId]: new Date().toISOString() } };
     case 'RESET':
       return initialHouseholdState;
     default:

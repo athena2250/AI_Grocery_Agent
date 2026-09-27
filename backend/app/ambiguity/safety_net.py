@@ -110,7 +110,7 @@ def candidate_product_ids(item: ExtractedItem, aliases: Sequence[CatalogAlias]) 
     return list(dict.fromkeys(m.product_id for m in matches))
 
 
-def _quantity_options(unit: str) -> list[str]:
+def quantity_options(unit: str) -> list[str]:
     if unit == "g":
         bases: list[float] = [50, 100, 200]
     elif unit in ("kg", "L"):
@@ -167,7 +167,7 @@ def forced_ambiguities(item: ExtractedItem, catalog: Catalog) -> list[Ambiguity]
                 raw_text=item.raw_text,
                 kind=AmbiguityKind.QUANTITY,
                 question=f"How much {name}?",
-                options=_quantity_options(unit),
+                options=quantity_options(unit),
             )
         )
 

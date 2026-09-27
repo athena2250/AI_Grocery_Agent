@@ -10,7 +10,8 @@ Mirrors mobile/src/state/planner.ts.
   3. Default rationale when the proposal had none.
   4. Pantry `almost_finished` / `out` → proposals flagged `needs_confirmation`;
      they reach the list only when the user confirms.
-  5. Group + sort in the fixed store-walk order below.
+  5. Group + sort in the fixed store-walk order below, or a store's own
+     aisle order (`store_order`, plan_11) — same list, different sort.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ Source = Literal["user", "household_memory", "purchase_history", "guess"]
 
 
 class Category(str, Enum):
-    """Fixed list categories, declared in store-walk order. Phase 4 makes this per-store."""
+    """Fixed list categories, declared in the default store-walk order (see `store_order`)."""
 
     VEGETABLES = "Vegetables"
     FRUITS = "Fruits"
@@ -161,18 +162,31 @@ class _Categorized(Protocol):
 C = TypeVar("C", bound=_Categorized)
 
 
-def _rank(category: str) -> int:
-    c = _as_category(category)
-    return CATEGORY_ORDER.index(c) if c else len(CATEGORY_ORDER)
+def store_order(aisles: Sequence[str]) -> tuple[Category, ...]:
+    """A store's walk order from the categories the user listed, in aisle order (plan_11).
+
+    Unknown names and repeats are dropped; categories the user didn't list
+    follow in the default order, so every section still has a place.
+    """
+
+    listed = [c for c in (_as_category(a) for a in aisles) if c]
+    return tuple(dict.fromkeys([*listed, *CATEGORY_ORDER]))
 
 
-def group_by_category(items: Iterable[C]) -> list[tuple[str, list[C]]]:
-    """Sections in the fixed category order; within a section, items keep their input order."""
+def group_by_category(
+    items: Iterable[C], order: Sequence[Category] = CATEGORY_ORDER
+) -> list[tuple[str, list[C]]]:
+    """Sections in `order` (default: the fixed store walk; per-store via `store_order`);
+    within a section, items keep their input order."""
+
+    def rank(category: str) -> int:
+        c = _as_category(category)
+        return order.index(c) if c in order else len(order)
 
     groups: dict[str, list[C]] = {}
     for item in items:
         groups.setdefault(item.category, []).append(item)
-    return sorted(groups.items(), key=lambda kv: _rank(kv[0]))
+    return sorted(groups.items(), key=lambda kv: rank(kv[0]))
 
 
 def low_stock_proposals(

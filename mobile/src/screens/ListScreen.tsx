@@ -5,18 +5,17 @@ import { theme } from '../theme';
 import { useHousehold } from '../state/HouseholdContext';
 import { ItemRow } from '../components/ItemRow';
 import type { ListItem, ProposedItem } from '../types';
-import { groupByCategory, lowStockProposals, pendingItems, visibleItems } from '../state/planner';
+import { groupByCategory, pendingItems, visibleItems } from '../state/planner';
+import { homeSuggestions } from '../state/prediction';
 import { ItemDetailModal } from './ItemDetailModal';
 
 export function ListScreen() {
-  const { state, markPurchased, approveList, acceptRestock, dismissRestock } = useHousehold();
+  const { state, markPurchased, approveList, acceptRestock, dismissRestock, dismissPrediction } = useHousehold();
   const [selected, setSelected] = useState<ListItem | null>(null);
+  const [suggestedOpen, setSuggestedOpen] = useState(false);
 
   const sections = useMemo(() => groupByCategory(visibleItems(state.listItems)), [state.listItems]);
-  const suggestions = useMemo(
-    () => lowStockProposals(state.inventory, state.listItems, state.products, state.preferences, state.dismissedRestocks),
-    [state.inventory, state.listItems, state.products, state.preferences, state.dismissedRestocks],
-  );
+  const { restock: suggestions, predicted } = useMemo(() => homeSuggestions(state), [state]);
 
   const toBuy = pendingItems(state.listItems).length;
   const approved = state.list.status === 'approved';
@@ -37,24 +36,45 @@ export function ListScreen() {
     ]);
   };
 
-  const suggestionBlock = suggestions.length > 0 && (
+  const suggestionRow = (p: ProposedItem, dismiss: (productId: string) => void) => (
+    <View key={p.id} style={styles.suggestRow}>
+      <Text style={styles.suggestText}>{p.rationale}</Text>
+      <View style={styles.chips}>
+        <Pressable style={styles.chip} onPress={() => add(p)}>
+          <Text style={styles.chipText}>
+            Add {p.product.toLowerCase()}{p.qty != null ? ` · ${p.qty} ${p.unit}` : ''}
+          </Text>
+        </Pressable>
+        <Pressable style={[styles.chip, styles.chipQuiet]} onPress={() => dismiss(p.productId)}>
+          <Text style={[styles.chipText, styles.chipQuietText]}>Not now</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  const restockBlock = suggestions.length > 0 && (
     <View style={styles.suggestBox}>
       <Text style={styles.suggestTitle}>Running out at home</Text>
-      {suggestions.map((p) => (
-        <View key={p.id} style={styles.suggestRow}>
-          <Text style={styles.suggestText}>{p.rationale}</Text>
-          <View style={styles.chips}>
-            <Pressable style={styles.chip} onPress={() => add(p)}>
-              <Text style={styles.chipText}>
-                Add {p.product.toLowerCase()}{p.qty != null ? ` · ${p.qty} ${p.unit}` : ''}
-              </Text>
-            </Pressable>
-            <Pressable style={[styles.chip, styles.chipQuiet]} onPress={() => dismissRestock(p.productId)}>
-              <Text style={[styles.chipText, styles.chipQuietText]}>Not now</Text>
-            </Pressable>
-          </View>
-        </View>
-      ))}
+      {suggestions.map((p) => suggestionRow(p, dismissRestock))}
+    </View>
+  );
+
+  // Purchase predictions (plan_10): collapsed by default, kept apart from what Mom added herself.
+  const predictedBlock = predicted.length > 0 && (
+    <View style={[styles.suggestBox, styles.predictBox]}>
+      <Pressable onPress={() => setSuggestedOpen((o) => !o)}>
+        <Text style={styles.predictTitle}>
+          {suggestedOpen ? '▾' : '▸'} Suggested ({predicted.length}) · usually bought around now
+        </Text>
+      </Pressable>
+      {suggestedOpen && predicted.map((p) => suggestionRow(p, dismissPrediction))}
+    </View>
+  );
+
+  const suggestionBlock = (restockBlock || predictedBlock) && (
+    <View>
+      {restockBlock}
+      {predictedBlock}
     </View>
   );
 
@@ -135,6 +155,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.accent,
   },
   suggestTitle: { fontWeight: '700', color: theme.colors.accent, marginBottom: 6 },
+  predictBox: { borderColor: theme.colors.border },
+  predictTitle: { fontWeight: '700', color: theme.colors.textMuted },
   suggestRow: { paddingVertical: 6 },
   suggestText: { color: theme.colors.text, fontSize: theme.font.body },
   chips: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },

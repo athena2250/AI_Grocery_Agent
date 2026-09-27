@@ -10,6 +10,7 @@ from .rules import (
     group_by_category,
     low_stock_proposals,
     merge_qty,
+    store_order,
 )
 from .store import (
     add_items,
@@ -42,5 +43,6 @@ __all__ = [
     "mark_purchased",
     "merge_qty",
     "remove_items",
+    "store_order",
     "visible_items",
 ]

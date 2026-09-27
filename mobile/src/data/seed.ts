@@ -208,7 +208,23 @@ export const seedInventory: InventoryEntry[] = [
   { productId: 'p_sunflower_oil', state: 'available', approxQty: 500, approxUnit: 'ml', updatedAt: today },
 ];
 
+const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString();
+
+const bought = (id: string, productId: string, product: string, qty: number, unit: string, brand: string | null, days: number): Purchase =>
+  ({ id, productId, product, qty, unit, brand, purchasedAt: daysAgo(days) });
+
+/** Newest first. Curd (weekly) and onions (~10 days) have enough history to be predicted due (plan_10); dal isn't due yet. */
 export const seedHistory: Purchase[] = [
+  bought('h3', 'p_curd', 'Curd', 400, 'g', 'Amul', 8),
+  bought('h4', 'p_onion', 'Onions', 1, 'kg', null, 11),
+  bought('h5', 'p_curd', 'Curd', 400, 'g', 'Amul', 15),
+  bought('h6', 'p_toor_dal', 'Toor dal', 1, 'kg', 'Tata Sampann', 18),
+  bought('h7', 'p_onion', 'Onions', 1, 'kg', null, 21),
+  bought('h8', 'p_curd', 'Curd', 400, 'g', 'Amul', 22),
+  bought('h9', 'p_curd', 'Curd', 400, 'g', 'Amul', 29),
+  bought('h10', 'p_onion', 'Onions', 1, 'kg', null, 32),
+  bought('h11', 'p_toor_dal', 'Toor dal', 1, 'kg', 'Tata Sampann', 39),
+  bought('h12', 'p_toor_dal', 'Toor dal', 1, 'kg', 'Tata Sampann', 61),
   {
     id: 'h1',
     productId: 'p_biscuits',
@@ -238,6 +254,7 @@ export const initialHouseholdState: HouseholdState = {
   list: { id: 'list_1', status: 'draft', createdAt: today },
   listItems: [],
   dismissedRestocks: {},
+  dismissedPredictions: {},
   history: seedHistory,
   pendingClarifications: [],
   turns: [

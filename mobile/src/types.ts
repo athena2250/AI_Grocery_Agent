@@ -191,6 +191,8 @@ export interface HouseholdState {
   listItems: ListItem[];
   /** Pantry restock suggestions Mom said "Not now" to: productId → the pantry row's `updatedAt` at the time. A newer pantry update shows it again. */
   dismissedRestocks: Record<string, string>;
+  /** Purchase-prediction suggestions Mom said "Not now" to: productId → when. Snoozed for `SNOOZE_DAYS` (plan_10). */
+  dismissedPredictions: Record<string, string>;
   history: Purchase[];
   pendingClarifications: Clarification[];
   turns: Turn[];

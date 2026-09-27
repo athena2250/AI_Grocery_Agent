@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, FlatList, Pressable, StyleSheet, KeyboardAvoidingView, Platform,
+  View, Text, TextInput, FlatList, Pressable, StyleSheet, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../theme';
@@ -8,11 +8,18 @@ import { useHousehold } from '../state/HouseholdContext';
 import { getAIService } from '../services/serviceFactory';
 import { ChatBubble } from '../components/ChatBubble';
 import { pendingItems } from '../state/planner';
+import { homeSuggestions } from '../state/prediction';
+import type { ProposedItem } from '../types';
+
+const NOT_NOW = 'Not now';
+const addLabel = (p: ProposedItem) => `Add ${p.product.toLowerCase()}`;
 
 export function ChatScreen({ navigation }: { navigation: any }) {
-  const { state, addUserTurn, addAgentTurn, applyAI, buildChatContext } = useHousehold();
+  const { state, addUserTurn, addAgentTurn, applyAI, buildChatContext, acceptRestock } = useHousehold();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  // The "may be running low" note opens a session; it goes away once Mom starts talking or says Not now (plan_10).
+  const [suggestionsOpen, setSuggestionsOpen] = useState(true);
   const listRef = useRef<FlatList<any>>(null);
   const ai = useMemo(() => getAIService(), []);
 
@@ -21,6 +28,7 @@ export function ChatScreen({ navigation }: { navigation: any }) {
     if (!message || busy) return;
     setBusy(true);
     setText('');
+    setSuggestionsOpen(false);
     addUserTurn(message);
     try {
       const ctx = { ...buildChatContext(), answeringClarificationId: clarificationId };
@@ -47,6 +55,34 @@ export function ChatScreen({ navigation }: { navigation: any }) {
 
   const draftCount = pendingItems(state.listItems).length;
 
+  const suggestions = useMemo(() => {
+    const { restock, predicted } = homeSuggestions(state);
+    return [...restock, ...predicted];
+  }, [state]);
+
+  // Never auto-add: each chip is Mom confirming one item. Adding to an approved list reopens it — ask first (plan_08).
+  const onSuggestionChip = (label: string) => {
+    if (label === NOT_NOW) return setSuggestionsOpen(false);
+    const p = suggestions.find((s) => addLabel(s) === label);
+    if (!p) return;
+    if (state.list.status !== 'approved') return acceptRestock(p);
+    Alert.alert('Reopen list?', `Your list is approved. Adding ${p.product.toLowerCase()} puts it back to draft.`, [
+      { text: 'Cancel' },
+      { text: 'Add', onPress: () => acceptRestock(p) },
+    ]);
+  };
+
+  const suggestionBubble = suggestionsOpen && suggestions.length > 0 && (
+    <ChatBubble
+      role="agent"
+      system
+      text={`${suggestions.length === 1 ? '1 item may be' : `${suggestions.length} items may be`} running low: ${
+        suggestions.map((p) => p.product.toLowerCase()).join(', ')}. Add to list?`}
+      chips={[...suggestions.map(addLabel), NOT_NOW]}
+      onChipPress={onSuggestionChip}
+    />
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
@@ -72,6 +108,7 @@ export function ChatScreen({ navigation }: { navigation: any }) {
             />
           );
         }}
+        ListFooterComponent={suggestionBubble || null}
         contentContainerStyle={{ paddingVertical: 8 }}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
       />

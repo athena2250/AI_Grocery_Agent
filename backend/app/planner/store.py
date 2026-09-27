@@ -59,10 +59,13 @@ def visible_items(session: Session, list_id: str) -> list[GroceryListItem]:
     return [i for i in list_items(session, list_id) if i.status != ItemStatus.REMOVED]
 
 
-def grouped_view(session: Session, list_id: str) -> list[tuple[str, list[GroceryListItem]]]:
-    """What the List screen shows: visible rows grouped in the fixed category order."""
+def grouped_view(
+    session: Session, list_id: str, order: Sequence[rules.Category] = rules.CATEGORY_ORDER
+) -> list[tuple[str, list[GroceryListItem]]]:
+    """What the List screen shows: visible rows grouped by category, in the default
+    store walk or a store's own aisle order (`rules.store_order`)."""
 
-    return rules.group_by_category(visible_items(session, list_id))
+    return rules.group_by_category(visible_items(session, list_id), order)
 
 
 def add_items(
