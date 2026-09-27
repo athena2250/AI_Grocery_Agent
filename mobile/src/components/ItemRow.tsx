@@ -11,13 +11,14 @@ interface Props {
 }
 
 export function ItemRow({ item, onTogglePurchased, onPress }: Props) {
+  const purchased = item.status === 'purchased';
   return (
     <Pressable onPress={onPress} style={styles.row}>
-      <Pressable onPress={onTogglePurchased} hitSlop={10} style={[styles.check, item.purchased && styles.checked]}>
-        {item.purchased && <Text style={styles.checkMark}>✓</Text>}
+      <Pressable onPress={onTogglePurchased} hitSlop={10} style={[styles.check, purchased && styles.checked]}>
+        {purchased && <Text style={styles.checkMark}>✓</Text>}
       </Pressable>
       <View style={styles.body}>
-        <Text style={[styles.title, item.purchased && styles.strike]}>
+        <Text style={[styles.title, purchased && styles.strike]}>
           {item.product}
           {item.brand ? ` · ${item.brand}` : ''}
         </Text>

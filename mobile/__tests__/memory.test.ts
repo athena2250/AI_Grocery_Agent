@@ -1,6 +1,7 @@
 import { MockAIService } from '../src/services/MockAIService';
 import { buildChatContext, reducer } from '../src/state/reducer';
 import { migrateState } from '../src/state/migrate';
+import { visibleItems } from '../src/state/planner';
 import { initialHouseholdState } from '../src/data/seed';
 import {
   applyPurchase,
@@ -97,7 +98,7 @@ describe('memory rules', () => {
 describe('reducer: memory writes are gated on confirmed actions', () => {
   const tomatoItem: ListItem = {
     id: 'li1', productId: 'p_tomato', product: 'Tomatoes', category: 'Vegetables', qty: 2, unit: 'kg',
-    brand: null, variant: null, confidence: 'high', source: 'user', rationale: '', purchased: false,
+    brand: null, variant: null, confidence: 'high', source: 'user', rationale: '', status: 'pending',
   };
 
   test('marking purchased updates typical qty (moving avg) and confidence', () => {
@@ -151,7 +152,9 @@ describe('reducer: memory writes are gated on confirmed actions', () => {
 
     ({ r, state } = await say(state, 'no, seeds not powder'));
     expect(r.corrections).toHaveLength(1);
-    expect(state.listItems.map((i) => [i.product, i.qty, i.unit])).toEqual([['Coriander seeds', 50, 'g']]);
+    expect(visibleItems(state.listItems).map((i) => [i.product, i.qty, i.unit])).toEqual([['Coriander seeds', 50, 'g']]);
+    // The corrected row is soft-removed, not deleted (plan_08).
+    expect(state.listItems.find((i) => i.product === 'Coriander powder')?.status).toBe('removed');
     expect(aliasOf(state, 'coriander')).toMatchObject({ productId: 'p_coriander_seeds', confidence: 0.6 });
   });
 
@@ -187,7 +190,7 @@ describe('integration: "get the usual X" reads household memory', () => {
     expect(r.proposedItems[0]).toMatchObject({ confidence: 'medium', needsConfirmation: true });
   });
 
-  test('below the 0.7 gate, "X is almost finished" asks instead of auto-adding', async () => {
+  test('"X is almost finished" offers the remembered amount as a chip instead of auto-adding', async () => {
     const s0: HouseholdState = {
       ...initialHouseholdState,
       preferences: [pref({ productId: 'p_rice', typicalQty: 5, typicalUnit: 'kg', confidence: 0.6 })],
@@ -195,7 +198,18 @@ describe('integration: "get the usual X" reads household memory', () => {
     const { r } = await say(s0, 'rice is almost finished');
     expect(r.proposedItems).toEqual([]);
     expect(r.inventoryUpdates).toEqual([{ productId: 'p_rice', state: 'almost_finished' }]);
-    expect(r.clarifications[0]).toMatchObject({ kind: 'quantity', suggestedOption: '5 kg' });
+    expect(r.clarifications[0]).toMatchObject({ kind: 'restock', suggestedOption: 'Yes, 5 kg' });
+  });
+
+  test('taking the remembered restock amount confirms memory; "Not now" leaves it alone', async () => {
+    let { r, state } = await say(initialHouseholdState, 'rice is almost finished');
+    const before = prefOf(state, 'p_rice')!.confidence;
+    ({ state } = await say(state, 'Not now', r.clarifications[0].id));
+    expect(prefOf(state, 'p_rice')!.confidence).toBe(before);
+
+    ({ r, state } = await say(state, 'rice is finished'));
+    ({ state } = await say(state, r.clarifications[0].suggestedOption!, r.clarifications[0].id));
+    expect(prefOf(state, 'p_rice')!.confidence).toBe(1);
   });
 });
 

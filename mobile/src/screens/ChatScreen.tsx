@@ -7,6 +7,7 @@ import { theme } from '../theme';
 import { useHousehold } from '../state/HouseholdContext';
 import { getAIService } from '../services/serviceFactory';
 import { ChatBubble } from '../components/ChatBubble';
+import { pendingItems } from '../state/planner';
 
 export function ChatScreen({ navigation }: { navigation: any }) {
   const { state, addUserTurn, addAgentTurn, applyAI, buildChatContext } = useHousehold();
@@ -44,7 +45,7 @@ export function ChatScreen({ navigation }: { navigation: any }) {
     return new Set(byClar.values());
   }, [state.turns, state.pendingClarifications]);
 
-  const draftCount = state.listItems.filter((i) => !i.purchased).length;
+  const draftCount = pendingItems(state.listItems).length;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>

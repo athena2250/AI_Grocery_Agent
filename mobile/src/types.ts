@@ -1,15 +1,16 @@
+/** Fixed list categories, in store-walk order (plan_08). `CATEGORY_ORDER` in state/planner.ts is the sort. */
 export type Category =
   | 'Vegetables'
   | 'Fruits'
-  | 'Grains & Rice'
-  | 'Pulses & Dal'
-  | 'Spices'
-  | 'Oils'
   | 'Dairy'
+  | 'Rice & Grains'
+  | 'Pulses'
+  | 'Spices'
+  | 'Cooking Essentials'
   | 'Snacks'
-  | 'Bakery'
   | 'Beverages'
-  | 'Other';
+  | 'Household'
+  | 'Personal Care';
 
 export type InventoryState = 'available' | 'running_low' | 'almost_finished' | 'out';
 export type Confidence = 'high' | 'medium' | 'low';
@@ -65,13 +66,33 @@ export interface AliasPreference {
   timesOverridden: number;
 }
 
+/**
+ * Pantry row (plan_06). Mirrors the `inventory` table; one row per product.
+ * `approxQty`/`approxUnit` only when the user said an amount — never required.
+ */
 export interface InventoryEntry {
   productId: string;
   state: InventoryState;
   approxQty?: number;
   approxUnit?: string;
+  updatedAt: string;
 }
 
+/** `pending → purchased | removed`. Removal is soft: kept for audit, hidden from the list view (plan_08). */
+export type ItemStatus = 'pending' | 'purchased' | 'removed';
+export type ListStatus = 'draft' | 'approved';
+
+/**
+ * Mirrors the `grocery_list` table (household_id implicit). `draft` until Mom
+ * approves; adding items to an approved list reopens it as `draft`.
+ */
+export interface GroceryList {
+  id: string;
+  status: ListStatus;
+  createdAt: string;
+}
+
+/** Mirrors `grocery_list_item` (list_id implicit — the sandbox has one list). */
 export interface ListItem {
   id: string;
   productId: string;
@@ -84,7 +105,7 @@ export interface ListItem {
   confidence: Confidence;
   source: Source;
   rationale: string;
-  purchased: boolean;
+  status: ItemStatus;
 }
 
 export interface Purchase {
@@ -116,12 +137,20 @@ export interface ProposedItem {
 export interface Clarification {
   id: string;
   itemRawText: string;
-  kind: 'product_type' | 'quantity' | 'brand' | 'package_size' | 'usual_unresolved' | 'product_identity' | 'save_pref';
+  kind:
+    | 'product_type' | 'quantity' | 'brand' | 'package_size' | 'usual_unresolved' | 'product_identity' | 'save_pref'
+    /** "Add rice to the list?" after the user said it's almost finished / out (plan_06). */
+    | 'restock';
   question: string;
   options: string[];
   productId?: string;
   /** The option pre-filled from household memory. Picking it confirms that memory; picking another overrides it (plan_05). */
   suggestedOption?: string;
+  /**
+   * The provisional list item this question refines ("Go with 1 kg?"). The answer's
+   * proposal reuses this id, so the planner replaces that item instead of adding to it.
+   */
+  itemId?: string;
 }
 
 /** The user corrected a list item to a different product ("no, seeds not powder"). */
@@ -158,7 +187,10 @@ export interface HouseholdState {
   preferences: Preference[];
   aliasPreferences: AliasPreference[];
   inventory: InventoryEntry[];
+  list: GroceryList;
   listItems: ListItem[];
+  /** Pantry restock suggestions Mom said "Not now" to: productId → the pantry row's `updatedAt` at the time. A newer pantry update shows it again. */
+  dismissedRestocks: Record<string, string>;
   history: Purchase[];
   pendingClarifications: Clarification[];
   turns: Turn[];
@@ -180,6 +212,7 @@ export interface ChatContext {
   aliasPreferences: AliasPreference[];
   inventory: InventoryEntry[];
   draftList: ListItem[];
+  listStatus: ListStatus;
   pendingClarifications: Clarification[];
   products: Product[];
   aliases: ProductAlias[];

@@ -27,17 +27,17 @@ export const seedProducts: Product[] = [
   { id: 'p_orange', name: 'Oranges', category: 'Fruits', defaultUnit: 'kg' },
   { id: 'p_lemon', name: 'Lemons', category: 'Fruits', defaultUnit: 'pcs' },
 
-  // Grains & Rice
-  { id: 'p_rice', name: 'Rice', category: 'Grains & Rice', defaultUnit: 'kg' },
-  { id: 'p_wheat_atta', name: 'Wheat atta', category: 'Grains & Rice', defaultUnit: 'kg' },
-  { id: 'p_poha', name: 'Poha', category: 'Grains & Rice', defaultUnit: 'g' },
-  { id: 'p_sooji', name: 'Sooji', category: 'Grains & Rice', defaultUnit: 'g' },
+  // Rice & Grains
+  { id: 'p_rice', name: 'Rice', category: 'Rice & Grains', defaultUnit: 'kg' },
+  { id: 'p_wheat_atta', name: 'Wheat atta', category: 'Rice & Grains', defaultUnit: 'kg' },
+  { id: 'p_poha', name: 'Poha', category: 'Rice & Grains', defaultUnit: 'g' },
+  { id: 'p_sooji', name: 'Sooji', category: 'Rice & Grains', defaultUnit: 'g' },
 
-  // Pulses & Dal
-  { id: 'p_toor_dal', name: 'Toor dal', category: 'Pulses & Dal', defaultUnit: 'kg' },
-  { id: 'p_moong_dal', name: 'Moong dal', category: 'Pulses & Dal', defaultUnit: 'kg' },
-  { id: 'p_chana_dal', name: 'Chana dal', category: 'Pulses & Dal', defaultUnit: 'kg' },
-  { id: 'p_rajma', name: 'Rajma', category: 'Pulses & Dal', defaultUnit: 'g' },
+  // Pulses
+  { id: 'p_toor_dal', name: 'Toor dal', category: 'Pulses', defaultUnit: 'kg' },
+  { id: 'p_moong_dal', name: 'Moong dal', category: 'Pulses', defaultUnit: 'kg' },
+  { id: 'p_chana_dal', name: 'Chana dal', category: 'Pulses', defaultUnit: 'kg' },
+  { id: 'p_rajma', name: 'Rajma', category: 'Pulses', defaultUnit: 'g' },
 
   // Spices
   { id: 'p_coriander_seeds', name: 'Coriander seeds', category: 'Spices', defaultUnit: 'g' },
@@ -47,25 +47,23 @@ export const seedProducts: Product[] = [
   { id: 'p_cumin', name: 'Cumin seeds', category: 'Spices', defaultUnit: 'g' },
   { id: 'p_mustard_seeds', name: 'Mustard seeds', category: 'Spices', defaultUnit: 'g' },
   { id: 'p_garam_masala', name: 'Garam masala', category: 'Spices', defaultUnit: 'g' },
-  { id: 'p_salt', name: 'Salt', category: 'Spices', defaultUnit: 'kg' },
-  { id: 'p_sugar', name: 'Sugar', category: 'Spices', defaultUnit: 'kg' },
 
-  // Oils
-  { id: 'p_sunflower_oil', name: 'Sunflower oil', category: 'Oils', defaultUnit: 'L' },
-  { id: 'p_ghee', name: 'Ghee', category: 'Oils', defaultUnit: 'g' },
+  // Cooking Essentials
+  { id: 'p_salt', name: 'Salt', category: 'Cooking Essentials', defaultUnit: 'kg' },
+  { id: 'p_sugar', name: 'Sugar', category: 'Cooking Essentials', defaultUnit: 'kg' },
+  { id: 'p_sunflower_oil', name: 'Sunflower oil', category: 'Cooking Essentials', defaultUnit: 'L' },
+  { id: 'p_ghee', name: 'Ghee', category: 'Cooking Essentials', defaultUnit: 'g' },
 
-  // Dairy
+  // Dairy (bread sits with it, as in most Indian stores)
   { id: 'p_milk', name: 'Milk', category: 'Dairy', defaultUnit: 'L' },
   { id: 'p_curd', name: 'Curd', category: 'Dairy', defaultUnit: 'g' },
   { id: 'p_paneer', name: 'Paneer', category: 'Dairy', defaultUnit: 'g' },
   { id: 'p_butter', name: 'Butter', category: 'Dairy', defaultUnit: 'g' },
+  { id: 'p_bread', name: 'Bread', category: 'Dairy', defaultUnit: 'loaf' },
 
   // Snacks
   { id: 'p_biscuits', name: 'Biscuits', category: 'Snacks', defaultUnit: 'pack' },
   { id: 'p_namkeen', name: 'Namkeen', category: 'Snacks', defaultUnit: 'g' },
-
-  // Bakery
-  { id: 'p_bread', name: 'Bread', category: 'Bakery', defaultUnit: 'loaf' },
 
   // Beverages
   { id: 'p_tea', name: 'Tea', category: 'Beverages', defaultUnit: 'g' },
@@ -154,6 +152,35 @@ export const seedAliases: ProductAlias[] = [
   { alias: 'kadi patta', productId: 'p_curry_leaves' },
   { alias: 'carrot', productId: 'p_carrot' },
   { alias: 'carrots', productId: 'p_carrot' },
+
+  // Telugu — what gets said at home
+  { alias: 'biyyam', productId: 'p_rice' },
+  { alias: 'pappu', productId: 'p_toor_dal' },
+  { alias: 'kandi pappu', productId: 'p_toor_dal' },
+  { alias: 'pesara pappu', productId: 'p_moong_dal' },
+  { alias: 'senaga pappu', productId: 'p_chana_dal' },
+  { alias: 'nune', productId: 'p_sunflower_oil' },
+  { alias: 'neyyi', productId: 'p_ghee' },
+  { alias: 'perugu', productId: 'p_curd' },
+  { alias: 'palu', productId: 'p_milk' },
+  { alias: 'uppu', productId: 'p_salt' },
+  { alias: 'chakkera', productId: 'p_sugar' },
+  { alias: 'pasupu', productId: 'p_turmeric' },
+  { alias: 'karam', productId: 'p_chilli_powder' },
+  { alias: 'jeelakarra', productId: 'p_cumin' },
+  { alias: 'avalu', productId: 'p_mustard_seeds' },
+  { alias: 'dhaniyalu', productId: 'p_coriander_seeds' },
+  { alias: 'kothimeera', productId: 'p_coriander_leaves' },
+  { alias: 'kottimeera', productId: 'p_coriander_leaves' },
+  { alias: 'karivepaku', productId: 'p_curry_leaves' },
+  { alias: 'allam', productId: 'p_ginger' },
+  { alias: 'vellulli', productId: 'p_garlic' },
+  { alias: 'pachimirchi', productId: 'p_chilli' },
+  { alias: 'ullipayalu', productId: 'p_onion' },
+  { alias: 'tamatalu', productId: 'p_tomato' },
+  { alias: 'bangaladumpa', productId: 'p_potato' },
+  { alias: 'atukulu', productId: 'p_poha' },
+  { alias: 'ravva', productId: 'p_sooji' },
 ];
 
 const today = new Date().toISOString();
@@ -176,9 +203,9 @@ export const seedAliasPreferences: AliasPreference[] = [
 ];
 
 export const seedInventory: InventoryEntry[] = [
-  { productId: 'p_rice', state: 'available', approxQty: 2, approxUnit: 'kg' },
-  { productId: 'p_toor_dal', state: 'running_low', approxQty: 200, approxUnit: 'g' },
-  { productId: 'p_sunflower_oil', state: 'available', approxQty: 500, approxUnit: 'ml' },
+  { productId: 'p_rice', state: 'available', approxQty: 2, approxUnit: 'kg', updatedAt: today },
+  { productId: 'p_toor_dal', state: 'running_low', approxQty: 200, approxUnit: 'g', updatedAt: today },
+  { productId: 'p_sunflower_oil', state: 'available', approxQty: 500, approxUnit: 'ml', updatedAt: today },
 ];
 
 export const seedHistory: Purchase[] = [
@@ -208,7 +235,9 @@ export const initialHouseholdState: HouseholdState = {
   preferences: seedPreferences,
   aliasPreferences: seedAliasPreferences,
   inventory: seedInventory,
+  list: { id: 'list_1', status: 'draft', createdAt: today },
   listItems: [],
+  dismissedRestocks: {},
   history: seedHistory,
   pendingClarifications: [],
   turns: [

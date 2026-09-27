@@ -19,6 +19,8 @@ import {
   saveAsUsual,
   type UsualFields,
 } from './memory';
+import { restockPurchased, upsertInventory } from './inventory';
+import { mergeIntoDraft, pendingItems, visibleItems } from './planner';
 
 export type Action =
   | { type: 'HYDRATE'; payload: HouseholdState }
@@ -31,34 +33,27 @@ export type Action =
   | { type: 'FORGET_PREFERENCE'; productId: string }
   | { type: 'FORGET_ALIAS_PREFERENCE'; disambiguationGroup: string }
   | { type: 'APPROVE_LIST' }
+  /** Mom tapped Add on a pantry restock suggestion (planner `lowStockProposals`). */
+  | { type: 'ACCEPT_RESTOCK'; proposal: ProposedItem }
+  | { type: 'DISMISS_RESTOCK'; productId: string }
   | { type: 'RESET' };
 
 let _c = 0;
 export const uid = (p: string) => `${p}_${Date.now()}_${_c++}`;
 
-function upsertInventory(list: HouseholdState['inventory'], u: InventoryUpdate): HouseholdState['inventory'] {
-  const idx = list.findIndex((i) => i.productId === u.productId);
-  const next: HouseholdState['inventory'] = [...list];
-  if (idx >= 0) next[idx] = { ...next[idx], ...u };
-  else next.push({ productId: u.productId, state: u.state, approxQty: u.approxQty, approxUnit: u.approxUnit });
-  return next;
+/** Plan the proposals into the list; any addition reopens an approved list as a draft (plan_08). */
+function addToList(state: HouseholdState, proposed: ProposedItem[]): Pick<HouseholdState, 'listItems' | 'list'> {
+  if (!proposed.length) return { listItems: state.listItems, list: state.list };
+  return {
+    listItems: mergeIntoDraft(state.listItems, proposed, state.products, () => uid('it')),
+    list: state.list.status === 'approved' ? { ...state.list, status: 'draft' } : state.list,
+  };
 }
 
-function proposedToListItem(p: ProposedItem): ListItem {
-  return {
-    id: p.id,
-    productId: p.productId,
-    product: p.product,
-    category: p.category,
-    qty: p.qty,
-    unit: p.unit,
-    brand: p.brand,
-    variant: p.variant,
-    confidence: p.confidence,
-    source: p.source,
-    rationale: p.rationale,
-    purchased: false,
-  };
+/** Hide a pantry suggestion until the pantry row changes again. */
+function dismissRestock(state: HouseholdState, inventory: HouseholdState['inventory'], productId: string) {
+  const row = inventory.find((i) => i.productId === productId);
+  return row ? { ...state.dismissedRestocks, [productId]: row.updatedAt } : state.dismissedRestocks;
 }
 
 const clarKey = (c: Clarification) => `${c.kind}|${c.productId ?? ''}|${c.itemRawText.toLowerCase().trim()}`;
@@ -78,8 +73,10 @@ export function mergePending(prior: Clarification[], r: AIResponse): Clarificati
   return [...kept, ...r.clarifications];
 }
 
-/** Append purchases to history and fold each into household memory (a confirmed action). */
-function recordPurchases(state: HouseholdState, items: ListItem[], now: Date): Pick<HouseholdState, 'history' | 'preferences'> {
+/** Append purchases to history, fold each into household memory, and restock the pantry (all confirmed actions). */
+function recordPurchases(
+  state: HouseholdState, items: ListItem[], now: Date,
+): Pick<HouseholdState, 'history' | 'preferences' | 'inventory'> {
   let preferences = state.preferences;
   const rows: Purchase[] = [];
   for (const li of items) {
@@ -97,7 +94,11 @@ function recordPurchases(state: HouseholdState, items: ListItem[], now: Date): P
       purchasedAt: now.toISOString(),
     });
   }
-  return { history: [...rows, ...state.history], preferences };
+  return {
+    history: [...rows, ...state.history],
+    preferences,
+    inventory: restockPurchased(state.inventory, items.map((li) => li.productId), now),
+  };
 }
 
 export const disambiguationGroupOf = (state: Pick<HouseholdState, 'aliases'>, productId: string) =>
@@ -114,7 +115,7 @@ function learnFromTurn(state: HouseholdState, r: AIResponse, now: Date): Pick<Ho
   const chosen = r.chosenOption;
 
   if (answered?.kind === 'save_pref' && answered.productId && chosen?.startsWith('Yes')) {
-    const latest = state.listItems.slice().reverse().find((li) => li.productId === answered.productId);
+    const latest = visibleItems(state.listItems).reverse().find((li) => li.productId === answered.productId);
     if (latest?.qty && latest.unit) {
       preferences = saveAsUsual(preferences, {
         productId: latest.productId,
@@ -130,6 +131,11 @@ function learnFromTurn(state: HouseholdState, r: AIResponse, now: Date): Pick<Ho
     const product = state.products.find((p) => p.name === chosen);
     const group = product && disambiguationGroupOf(state, product.id);
     if (product && group) aliasPreferences = chooseAlias(aliasPreferences, group, product.id, now);
+  }
+
+  // "Add rice to the list? — Yes, 5 kg": taking the remembered amount confirms it. "Not now" says nothing about memory.
+  if (answered?.kind === 'restock' && answered.suggestedOption && answered.productId && chosen === answered.suggestedOption) {
+    preferences = confirmPreference(preferences, answered.productId, now);
   }
 
   // A quantity question pre-filled from memory: the pre-filled chip confirms, anything else overrides.
@@ -156,47 +162,52 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       const r = action.response;
       const now = new Date();
       const corrected = new Set((r.corrections ?? []).map((c) => c.itemId));
-      let listItems = state.listItems.filter((li) => !corrected.has(li.id));
-      // Merge proposed items (dedupe by productId+brand — replace)
-      if (r.proposedItems.length) {
-        const additions = r.proposedItems.map(proposedToListItem);
-        const remaining = listItems.filter(
-          (li) => !additions.some((a) => a.productId === li.productId && !li.purchased),
-        );
-        listItems = [...remaining, ...additions];
-      }
+      // A corrected item is swapped out, not merged into: soft-remove it before planning the replacement.
+      const withoutCorrected = state.listItems.map((li) => (corrected.has(li.id) ? { ...li, status: 'removed' as const } : li));
+      const { list, listItems: planned } = addToList({ ...state, listItems: withoutCorrected }, r.proposedItems);
+      let listItems = planned;
       // Inventory updates
       let inventory = state.inventory;
-      for (const u of r.inventoryUpdates) inventory = upsertInventory(inventory, u);
+      for (const u of r.inventoryUpdates) inventory = upsertInventory(inventory, u, now);
+
+      const answered = state.pendingClarifications.find((c) => c.id === r.resolvedClarificationId);
+      const dismissedRestocks = answered?.kind === 'restock' && answered.productId && r.chosenOption === 'Not now'
+        ? dismissRestock(state, inventory, answered.productId)
+        : state.dismissedRestocks;
 
       const learned = learnFromTurn(state, r, now);
       let { history } = state;
       let { preferences } = learned;
       if (r.purchasesMarked.length) {
-        listItems = listItems.map((li) => (r.purchasesMarked.includes(li.id) ? { ...li, purchased: true } : li));
+        listItems = listItems.map((li) => (r.purchasesMarked.includes(li.id) ? { ...li, status: 'purchased' as const } : li));
         const bought = listItems.filter((li) => r.purchasesMarked.includes(li.id));
-        ({ history, preferences } = recordPurchases({ ...state, preferences }, bought, now));
+        ({ history, preferences, inventory } = recordPurchases({ ...state, preferences, inventory }, bought, now));
       }
       const pendingClarifications = mergePending(state.pendingClarifications, r);
 
       return {
-        ...state, listItems, inventory, history, pendingClarifications, preferences,
+        ...state, list, listItems, inventory, history, pendingClarifications, preferences, dismissedRestocks,
         aliasPreferences: learned.aliasPreferences,
       };
     }
     case 'MARK_PURCHASED_BY_ID': {
       const item = state.listItems.find((li) => li.id === action.itemId);
-      if (!item || item.purchased) return state;
+      if (!item || item.status !== 'pending') return state;
+      // Ticking items off an approved list is shopping, not editing — the list stays approved.
       return {
         ...state,
-        listItems: state.listItems.map((li) => (li.id === action.itemId ? { ...li, purchased: true } : li)),
+        listItems: state.listItems.map((li) => (li.id === action.itemId ? { ...li, status: 'purchased' } : li)),
         ...recordPurchases(state, [item], new Date()),
       };
     }
     case 'REMOVE_ITEM':
-      return { ...state, listItems: state.listItems.filter((li) => li.id !== action.itemId) };
+      // Soft: kept for audit, hidden from the list view.
+      return {
+        ...state,
+        listItems: state.listItems.map((li) => (li.id === action.itemId && li.status === 'pending' ? { ...li, status: 'removed' } : li)),
+      };
     case 'SET_INVENTORY':
-      return { ...state, inventory: upsertInventory(state.inventory, action.update) };
+      return { ...state, inventory: upsertInventory(state.inventory, action.update, new Date()) };
     case 'SAVE_AS_USUAL':
       return { ...state, preferences: saveAsUsual(state.preferences, action.fields, new Date()) };
     case 'FORGET_PREFERENCE':
@@ -207,8 +218,19 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
         aliasPreferences: state.aliasPreferences.filter((a) => a.disambiguationGroup !== action.disambiguationGroup),
       };
     case 'APPROVE_LIST':
-      // In sandbox, "approve" freezes the current list; here we just move all unpurchased to purchased? No — keep as-is.
-      return state;
+      if (state.list.status === 'approved' || pendingItems(state.listItems).length === 0) return state;
+      return { ...state, list: { ...state.list, status: 'approved' } };
+    case 'ACCEPT_RESTOCK': {
+      const p = action.proposal;
+      if (pendingItems(state.listItems).some((li) => li.productId === p.productId)) return state;
+      // Taking the remembered amount is picking the remembered option — same as the chat restock chip.
+      const preferences = p.source === 'household_memory' && p.qty != null
+        ? confirmPreference(state.preferences, p.productId, new Date())
+        : state.preferences;
+      return { ...state, ...addToList(state, [{ ...p, id: uid('it'), needsConfirmation: false }]), preferences };
+    }
+    case 'DISMISS_RESTOCK':
+      return { ...state, dismissedRestocks: dismissRestock(state, state.inventory, action.productId) };
     case 'RESET':
       return initialHouseholdState;
     default:
@@ -218,11 +240,12 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
 
 export function buildChatContext(state: HouseholdState, answeringClarificationId?: string): ChatContext {
   return {
-    recentItems: state.listItems.slice(-10),
+    recentItems: visibleItems(state.listItems).slice(-10),
     preferences: state.preferences,
     aliasPreferences: state.aliasPreferences,
     inventory: state.inventory,
-    draftList: state.listItems.filter((li) => !li.purchased),
+    draftList: pendingItems(state.listItems),
+    listStatus: state.list.status,
     pendingClarifications: state.pendingClarifications,
     products: state.products,
     aliases: state.aliases,

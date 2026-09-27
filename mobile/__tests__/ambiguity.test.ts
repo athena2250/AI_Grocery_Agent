@@ -19,7 +19,7 @@ describe('MockAIService ambiguity table', () => {
     ['get coriander seeds', 'ADD_ITEMS', 'quantity'],
     ["tomatoes I don't know how much", 'ADD_ITEMS', 'quantity'],
     ['get the usual biscuits', 'ADD_ITEMS', 'brand'],
-    ['rice is almost finished', 'UPDATE_INVENTORY', undefined],
+    ['rice is almost finished', 'UPDATE_INVENTORY', 'restock'],
     ['get 2 kg onions', 'ADD_ITEMS', undefined],
   ])('%s → %s / %s', async (text, intent, kind) => {
     const r = await ai.chat(text, buildChatContext(initialHouseholdState));

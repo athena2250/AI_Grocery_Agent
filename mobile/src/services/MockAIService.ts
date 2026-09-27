@@ -8,7 +8,9 @@ import type {
   ProposedItem,
 } from '../types';
 import type { AIService } from './AIService';
-import { AUTO_SUGGEST_GATE, confidenceLevel, getAliasPreference, getPreferences } from '../state/memory';
+import { confidenceLevel, getAliasPreference, getPreferences } from '../state/memory';
+import { INVENTORY_STATE_LABEL, needsRestock } from '../state/inventory';
+import { parseInventoryPhrase } from './inventoryPhrases';
 
 let counter = 0;
 const uid = (p: string) => `${p}_${Date.now()}_${counter++}`;
@@ -236,7 +238,9 @@ function resolveClarification(pending: Clarification, text: string, ctx: ChatCon
         confidence: confidenceLevel(pref.confidence),
         rationale: `You usually get ${usualText(pref)}.`,
       });
-      return { ...ask, intent: 'CLARIFY_RESPONSE', proposedItems: [proposed] };
+      // The quantity answer refines this item rather than adding a second one.
+      const clarifications = ask.clarifications.map((c) => ({ ...c, itemId: proposed.id }));
+      return { ...ask, intent: 'CLARIFY_RESPONSE', proposedItems: [proposed], clarifications };
     }
     return { ...ask, intent: 'CLARIFY_RESPONSE' };
   }
@@ -260,12 +264,16 @@ function resolveClarification(pending: Clarification, text: string, ctx: ChatCon
       });
     }
     const pref = preferenceFor(ctx.preferences, productId);
-    const proposed = makeProposed(product, qty, unit, {
-      brand: pref?.preferredBrand,
-      source: 'user',
-      confidence: 'high',
-      rationale: `You said ${qty} ${unit}.`,
-    });
+    const proposed = {
+      ...makeProposed(product, qty, unit, {
+        brand: pref?.preferredBrand,
+        source: 'user',
+        confidence: 'high',
+        rationale: `You said ${qty} ${unit}.`,
+      }),
+      // Same id as the provisional item this question was confirming → the planner replaces it.
+      ...(pending.itemId ? { id: pending.itemId } : {}),
+    };
     const savePref = askSavePref(product, qty, unit, pref?.preferredBrand);
     return reply(`Added ${product.name.toLowerCase()} — ${qty} ${unit}. Save as usual?`, {
       intent: 'CLARIFY_RESPONSE',
@@ -280,6 +288,32 @@ function resolveClarification(pending: Clarification, text: string, ctx: ChatCon
       return reply(`Saved. I'll remember that.`, { intent: 'CLARIFY_RESPONSE' });
     }
     return reply(`Okay, not saving.`, { intent: 'CLARIFY_RESPONSE' });
+  }
+
+  if (pending.kind === 'restock') {
+    if (!matchedOption) return null;
+    const product = productById(ctx.products, pending.productId!)!;
+    if (matchedOption === 'Not now') return reply(`Okay, not adding ${product.name.toLowerCase()}.`, { intent: 'CLARIFY_RESPONSE' });
+    // Already added from the List screen's pantry suggestion — don't add it twice.
+    if (ctx.draftList.some((i) => i.productId === product.id)) {
+      return reply(`${product.name} is already on the list.`, { intent: 'CLARIFY_RESPONSE' });
+    }
+    const pref = preferenceFor(ctx.preferences, product.id);
+    if (matchedOption === pending.suggestedOption && pref?.typicalQty && pref.typicalUnit) {
+      const state = ctx.inventory.find((i) => i.productId === product.id)?.state ?? 'almost_finished';
+      const proposed = makeProposed(product, pref.typicalQty, pref.typicalUnit, {
+        brand: pref.preferredBrand,
+        variant: pref.preferredVariant,
+        source: 'household_memory',
+        confidence: confidenceLevel(pref.confidence),
+        rationale: `You said ${product.name.toLowerCase()} is ${INVENTORY_STATE_LABEL[state]} — you usually get ${usualText(pref)}.`,
+      });
+      return reply(`Added ${usualText(pref)} ${product.name.toLowerCase()} to the list.`, {
+        intent: 'CLARIFY_RESPONSE',
+        proposedItems: [proposed],
+      });
+    }
+    return { ...askQuantity(product.name, product, pref?.typicalQty, pref?.typicalUnit), intent: 'CLARIFY_RESPONSE' };
   }
 
   if (pending.kind === 'brand') {
@@ -322,59 +356,59 @@ function handleMarkPurchased(text: string, ctx: ChatContext): AIResponse | null 
   const matches = findAliasMatches(text, ctx.aliases);
   if (matches.length === 0) return null;
   const productIds = new Set(matches.map((m) => m.productId));
-  const items = ctx.draftList.filter((i) => productIds.has(i.productId) && !i.purchased);
-  if (items.length === 0) {
-    return reply(`I don't see that on your list.`, { intent: 'MARK_PURCHASED' });
+  const items = ctx.draftList.filter((i) => productIds.has(i.productId));
+  if (items.length > 0) {
+    // The state layer flips these to `available` in the pantry when it records the purchase.
+    return reply(`Marked ${items.map((i) => i.product.toLowerCase()).join(', ')} purchased.`, {
+      intent: 'MARK_PURCHASED',
+      purchasesMarked: items.map((i) => i.id),
+    });
   }
-  return reply(`Marked ${items.map((i) => i.product.toLowerCase()).join(', ')} purchased.`, {
-    intent: 'MARK_PURCHASED',
-    purchasesMarked: items.map((i) => i.id),
-  });
+  // Bought something that wasn't on the list: nothing to tick off, but the pantry should know.
+  if (matches.length === 1) {
+    const product = productById(ctx.products, matches[0].productId)!;
+    return reply(`${product.name} wasn't on the list — marked it as stocked up in the pantry.`, {
+      intent: 'UPDATE_INVENTORY',
+      inventoryUpdates: [{ productId: product.id, state: 'available' }],
+    });
+  }
+  return reply(`I don't see that on your list.`, { intent: 'MARK_PURCHASED' });
+}
+
+/** "Add rice to the list?" — the planner's buy signal, as a proposal the user confirms (plan_06). */
+function askRestock(product: Product, pref: Preference | undefined): Clarification {
+  const remembered = pref?.typicalQty && pref.typicalUnit ? `Yes, ${usualText(pref)}` : undefined;
+  return {
+    id: uid('cl'),
+    itemRawText: product.name,
+    kind: 'restock',
+    question: `Add ${product.name.toLowerCase()} to the list?`,
+    options: remembered ? [remembered, 'Other amount', 'Not now'] : ['Yes, add', 'Not now'],
+    productId: product.id,
+    ...(remembered ? { suggestedOption: remembered } : {}),
+  };
 }
 
 function handleInventoryUpdate(text: string, ctx: ChatContext): AIResponse | null {
-  const t = norm(text);
-  const stateMatch =
-    /almost finished|almost done|nearly done/.test(t) ? 'almost_finished' :
-    /running low|low on|getting low/.test(t) ? 'running_low' :
-    /out of|finished|over|khatam/.test(t) ? 'out' :
-    /available|full|plenty/.test(t) ? 'available' :
-    null;
-  if (!stateMatch) return null;
+  const phrase = parseInventoryPhrase(text);
+  if (!phrase) return null;
   const matches = findAliasMatches(text, ctx.aliases);
   if (matches.length === 0) return null;
   if (matches.length > 1) return askProductType(text, matches, ctx);
 
   const product = productById(ctx.products, matches[0].productId)!;
-  const invUpdate = { productId: product.id, state: stateMatch as 'available' | 'running_low' | 'almost_finished' | 'out' };
+  const amount = phrase.approxQty != null ? ` (about ${phrase.approxQty} ${phrase.approxUnit} left)` : '';
+  const marked = `Got it — marked ${product.name.toLowerCase()} ${INVENTORY_STATE_LABEL[phrase.state]}${amount}.`;
+  const update = { intent: 'UPDATE_INVENTORY' as const, inventoryUpdates: [{ productId: product.id, ...phrase }] };
 
-  const label = stateMatch.replace('_', ' ');
-  const marked = `Got it — marked ${product.name.toLowerCase()} ${label}.`;
-  if (stateMatch === 'available') {
-    return reply(marked, { intent: 'UPDATE_INVENTORY', inventoryUpdates: [invUpdate] });
+  if (!needsRestock(phrase.state)) return reply(marked, update);
+  if (ctx.draftList.some((i) => i.productId === product.id)) {
+    return reply(`${marked} It's already on the list.`, update);
   }
-
-  // Low/finished/out: re-add the usual only when memory clears the auto-suggest gate.
   const pref = preferenceFor(ctx.preferences, product.id);
-  if (pref?.typicalQty && pref.typicalUnit && pref.confidence >= AUTO_SUGGEST_GATE) {
-    const proposed = makeProposed(product, pref.typicalQty, pref.typicalUnit, {
-      brand: pref.preferredBrand,
-      variant: pref.preferredVariant,
-      source: 'household_memory',
-      confidence: confidenceLevel(pref.confidence),
-      rationale: `${product.name} is ${label} — you usually get ${usualText(pref)}.`,
-    });
-    return reply(`${marked} Added ${usualText(pref)} to the list.`, {
-      intent: 'UPDATE_INVENTORY',
-      inventoryUpdates: [invUpdate],
-      proposedItems: [proposed],
-    });
-  }
-  if (pref?.typicalQty && pref.typicalUnit) {
-    const ask = askQuantity(text, product, pref.typicalQty, pref.typicalUnit);
-    return { ...ask, reply: `${marked} ${ask.reply}`, intent: 'UPDATE_INVENTORY', inventoryUpdates: [invUpdate] };
-  }
-  return reply(marked, { intent: 'UPDATE_INVENTORY', inventoryUpdates: [invUpdate] });
+  const clar = askRestock(product, pref);
+  const hint = clar.suggestedOption && pref ? ` You usually get ${usualText(pref)}.` : '';
+  return reply(`${marked} Add it to the list?${hint}`, { ...update, clarifications: [clar] });
 }
 
 const CORRECTION_RE = /^(no|nope|nahi)\b|\bnot\b/;
@@ -484,6 +518,7 @@ function handleAddItems(text: string, ctx: ChatContext): AIResponse | null {
       options: [`Yes ${qty} ${unit}`, `½ ${unit}`, `2 ${unit}`, 'custom'],
       productId: product.id,
       suggestedOption: `Yes ${qty} ${unit}`,
+      itemId: proposed.id,
     };
     return reply(`Proposing ${qty} ${unit} of ${product.name.toLowerCase()} — that's your usual.`, {
       intent: 'ADD_ITEMS',
@@ -496,8 +531,18 @@ function handleAddItems(text: string, ctx: ChatContext): AIResponse | null {
   return askQuantity(text, product, pref?.typicalQty, pref?.typicalUnit);
 }
 
+/** Adding to an approved list puts it back to draft (plan_08) — say so, so it's never a surprise. */
+function noteReopen(r: AIResponse, ctx: ChatContext): AIResponse {
+  if (ctx.listStatus !== 'approved' || r.proposedItems.length === 0) return r;
+  return { ...r, reply: `${r.reply}\n(Your list was approved — this puts it back to draft. Approve it again when you're done.)` };
+}
+
 export class MockAIService implements AIService {
   async chat(text: string, ctx: ChatContext): Promise<AIResponse> {
+    return noteReopen(this.respond(text, ctx), ctx);
+  }
+
+  private respond(text: string, ctx: ChatContext): AIResponse {
     const trimmed = text.trim();
     if (!trimmed) return reply(`Say something — like "get rice" or "show list".`);
 
@@ -514,11 +559,12 @@ export class MockAIService implements AIService {
       if (r) return r;
     }
 
-    const purchased = handleMarkPurchased(trimmed, ctx);
-    if (purchased) return purchased;
-
+    // Inventory first: "we still got plenty of rice" is a pantry statement, not a purchase.
     const inv = handleInventoryUpdate(trimmed, ctx);
     if (inv) return inv;
+
+    const purchased = handleMarkPurchased(trimmed, ctx);
+    if (purchased) return purchased;
 
     const add = handleAddItems(trimmed, ctx);
     if (add) return add;

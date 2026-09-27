@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from 'react';
-import type { AIResponse, ChatContext, HouseholdState, InventoryUpdate } from '../types';
+import type { AIResponse, ChatContext, HouseholdState, InventoryUpdate, ProposedItem } from '../types';
 import { initialHouseholdState } from '../data/seed';
 import { loadPersisted, savePersisted, clearPersisted } from './persistence';
 import { buildChatContext as buildContextFor, reducer, uid } from './reducer';
@@ -17,6 +17,9 @@ interface Ctx {
   saveAsUsual: (fields: UsualFields) => void;
   forgetPreference: (productId: string) => void;
   forgetAliasPreference: (disambiguationGroup: string) => void;
+  approveList: () => void;
+  acceptRestock: (proposal: ProposedItem) => void;
+  dismissRestock: (productId: string) => void;
   reset: () => Promise<void>;
   buildChatContext: () => ChatContext;
 }
@@ -58,6 +61,9 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     (disambiguationGroup: string) => dispatch({ type: 'FORGET_ALIAS_PREFERENCE', disambiguationGroup }),
     [],
   );
+  const approveList = useCallback(() => dispatch({ type: 'APPROVE_LIST' }), []);
+  const acceptRestock = useCallback((proposal: ProposedItem) => dispatch({ type: 'ACCEPT_RESTOCK', proposal }), []);
+  const dismissRestock = useCallback((productId: string) => dispatch({ type: 'DISMISS_RESTOCK', productId }), []);
   const reset = useCallback(async () => {
     await clearPersisted();
     dispatch({ type: 'RESET' });
@@ -68,8 +74,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(() => ({
     state, hydrated, addUserTurn, addAgentTurn, applyAI,
     markPurchased, removeItem, setInventory, saveAsUsual,
-    forgetPreference, forgetAliasPreference, reset, buildChatContext,
-  }), [state, hydrated, addUserTurn, addAgentTurn, applyAI, markPurchased, removeItem, setInventory, saveAsUsual, forgetPreference, forgetAliasPreference, reset, buildChatContext]);
+    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, reset, buildChatContext,
+  }), [
+    state, hydrated, addUserTurn, addAgentTurn, applyAI, markPurchased, removeItem, setInventory, saveAsUsual,
+    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, reset, buildChatContext,
+  ]);
 
   return <HouseholdCtx.Provider value={value}>{children}</HouseholdCtx.Provider>;
 }

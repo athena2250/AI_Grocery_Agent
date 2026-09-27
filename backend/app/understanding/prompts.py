@@ -23,7 +23,7 @@ You MUST respond with ONE JSON object, matching this shape exactly:
     { "raw_text": str, "canonical_guess": str|null, "qty": number|null, "unit": str|null, "brand": str|null, "variant_hint": str|null }
   ],
   "inventory_updates": [
-    { "raw_text": str, "product_guess": str|null, "state": "available"|"running_low"|"almost_finished"|"out" }
+    { "raw_text": str, "product_guess": str|null, "state": "available"|"running_low"|"almost_finished"|"out", "approx_qty": number|null, "approx_unit": str|null }
   ],
   "ambiguities": [
     { "raw_text": str, "kind": "product_type"|"quantity"|"brand"|"package_size"|"usual_unresolved"|"product_identity", "question": str, "options": [str, ...] }
@@ -36,7 +36,13 @@ Hard rules — violating any is a bug:
   2. If a field is null and the value matters (qty for a countable item, product type for polysemous items like "coriander"), you MUST add an entry to `ambiguities` with a short question and 2–4 options.
   3. Words like "usual", "same", "the one", "regular" → set `variant_hint` to "usual". DO NOT try to resolve which product this is; that is done downstream against memory.
   4. Do NOT assign categories. Do NOT compute confidence. Do NOT modify or reference memory beyond reading the provided context.
-  5. Inventory phrases ("almost finished", "running out", "over", "khatam") → `inventory_updates`, and if the user also implies re-buying, ALSO add an item.
+  5. Inventory phrases → `inventory_updates`. The household speaks English, Hindi and Telugu (romanized):
+       almost_finished: "almost finished", "only half a packet left", "khatam hone wala", "aipovachindi", "konchem e undi"
+       running_low:     "running low", "running out", "kam hai", "takkuva undi", "saripodu"
+       out:             "no X left", "finished", "over", "khatam", "aipoyindi", "ledu"
+       available:       "we still have plenty", "bahut hai", "chala undi", "inka undi"
+     Set approx_qty/approx_unit ONLY if the user said an amount ("half a packet" → 0.5 "pack"); never for "out".
+     Do NOT add an item just because something is low — the orchestrator offers that. Add an item only if the user explicitly asks to buy it too.
   6. "mark X purchased/bought/got" → intent MARK_PURCHASED and put the item name(s) in `purchases_marked`.
   7. "show / see / what's on the list" → intent SHOW_LIST, no items.
   8. If the utterance is a short reply to a prior clarification chip (e.g. just "seeds" or "100g"), intent is CLARIFY_RESPONSE.
@@ -126,18 +132,28 @@ FEW_SHOTS: list[dict[str, Any]] = [
         "context": {},
         "output": {
             "intent": "UPDATE_INVENTORY",
-            "items": [
-                {
-                    "raw_text": "rice",
-                    "canonical_guess": "rice",
-                    "qty": None,
-                    "unit": None,
-                    "brand": None,
-                    "variant_hint": "usual",
-                }
-            ],
+            "items": [],
             "inventory_updates": [
                 {"raw_text": "rice", "product_guess": "rice", "state": "almost_finished"}
+            ],
+            "ambiguities": [],
+            "purchases_marked": [],
+        },
+    },
+    {
+        "utterance": "atukulu aipovachindi, only half a packet left",
+        "context": {},
+        "output": {
+            "intent": "UPDATE_INVENTORY",
+            "items": [],
+            "inventory_updates": [
+                {
+                    "raw_text": "atukulu",
+                    "product_guess": "poha",
+                    "state": "almost_finished",
+                    "approx_qty": 0.5,
+                    "approx_unit": "pack",
+                }
             ],
             "ambiguities": [],
             "purchases_marked": [],

@@ -61,6 +61,10 @@ class InventoryUpdate(BaseModel):
     raw_text: str
     product_guess: str | None = None
     state: InventoryStateLiteral
+    approx_qty: float | None = Field(
+        default=None, ge=0, description='Only when said: "half a packet left" → 0.5.'
+    )
+    approx_unit: str | None = None
 
 
 class Ambiguity(BaseModel):

@@ -143,7 +143,7 @@ Executed on the phone, in order:
 5. "get tomatoes I don't know how much" → agent proposes 1 kg from household memory (chips Yes 1 kg / ½ kg / 2 kg).
 6. List tab: Coriander seeds under Spices, Tomatoes under Vegetables.
 7. Tap Tomatoes → Item Detail shows rationale + high confidence + source=household_memory.
-8. "rice is almost finished" → Pantry shows rice as almost finished; list adds Aashirvaad 5 kg with rationale.
+8. "rice is almost finished" → Pantry shows rice as almost finished; agent offers "Yes, 5 kg Aashirvaad" / "Other amount" / "Not now". Tap "Yes" → list adds Aashirvaad 5 kg with rationale (plan_06: low stock only *proposes*).
 9. "mark tomatoes purchased" → item checked; History tab shows new row.
 10. Kill/reopen app → state persists.
 

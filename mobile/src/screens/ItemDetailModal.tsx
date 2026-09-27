@@ -55,9 +55,11 @@ export function ItemDetailModal({ item, onClose }: Props) {
             >
               <Text style={styles.actionText}>Save as usual</Text>
             </Pressable>
-            <Pressable style={[styles.actionBtn, styles.dangerBtn]} onPress={() => { removeItem(item.id); onClose(); }}>
-              <Text style={[styles.actionText, styles.dangerText]}>Remove item</Text>
-            </Pressable>
+            {item.status === 'pending' && (
+              <Pressable style={[styles.actionBtn, styles.dangerBtn]} onPress={() => { removeItem(item.id); onClose(); }}>
+                <Text style={[styles.actionText, styles.dangerText]}>Remove item</Text>
+              </Pressable>
+            )}
           </View>
 
           <Pressable style={styles.close} onPress={onClose}>

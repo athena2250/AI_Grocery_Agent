@@ -38,6 +38,8 @@ class CatalogProduct:
     id: str
     name: str
     default_unit: str = "pcs"
+    category: str | None = None
+    """One of the planner's fixed categories (plan_08); the list is grouped by this, never by the LLM."""
 
 
 @dataclass(frozen=True)

@@ -77,3 +77,28 @@
 
 - utterance: "please add oil"
   intent: ADD_ITEMS
+
+# plan_06 — pantry phrases the house actually uses (Hindi / Telugu, romanized)
+- utterance: "only half a packet of poha left"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: almost_finished
+
+- utterance: "we still have plenty of rice"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: available
+
+- utterance: "cheeni kam hai"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: running_low
+
+- utterance: "biyyam aipovachindi"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: almost_finished
+
+- utterance: "palu aipoyindi"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: out
+
+- utterance: "nune takkuva undi"
+  intent: UPDATE_INVENTORY
+  requires_inventory_state: running_low
