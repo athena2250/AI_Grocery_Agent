@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, Text, View, StyleSheet } from 'react-native';
 import { theme } from '../theme';
 import type { ListItem } from '../types';
+import { CheckCircle } from './hearth';
 import { ConfidenceDot } from './ConfidenceDot';
 
 interface Props {
@@ -10,48 +11,42 @@ interface Props {
   onPress: () => void;
 }
 
+const SOURCE_LABEL: Record<ListItem['source'], string> = {
+  user: 'you said',
+  household_memory: 'your usual',
+  purchase_history: 'from history',
+  guess: 'a guess',
+};
+
 export function ItemRow({ item, onTogglePurchased, onPress }: Props) {
   const purchased = item.status === 'purchased';
+  const amount = [item.qty != null ? `${item.qty} ${item.unit ?? ''}`.trim() : 'how much?', item.brand].filter(Boolean).join(' · ');
   return (
     <Pressable onPress={onPress} style={styles.row}>
-      <Pressable onPress={onTogglePurchased} hitSlop={10} style={[styles.check, purchased && styles.checked]}>
-        {purchased && <Text style={styles.checkMark}>✓</Text>}
+      <Pressable onPress={onTogglePurchased} hitSlop={10} accessibilityLabel={purchased ? 'Bought' : 'Mark bought'}>
+        <CheckCircle on={purchased} onColor={theme.colors.green} />
       </Pressable>
       <View style={styles.body}>
-        <Text style={[styles.title, purchased && styles.strike]}>
-          {item.product}
-          {item.brand ? ` · ${item.brand}` : ''}
-        </Text>
+        <Text style={[styles.title, purchased && styles.done]}>{item.product}</Text>
         <View style={styles.metaRow}>
-          <ConfidenceDot level={item.confidence} />
-          <Text style={styles.meta}>
-            {item.qty ?? '?'} {item.unit ?? ''} · {item.source.replace('_', ' ')}
-          </Text>
+          <ConfidenceDot level={item.confidence} size={7} />
+          <Text style={styles.meta}>{amount} · {SOURCE_LABEL[item.source]}</Text>
         </View>
       </View>
+      <Text style={styles.chev}>›</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 14, paddingHorizontal: 2, borderTopWidth: 1, borderTopColor: theme.colors.hairline,
   },
-  check: {
-    width: 22, height: 22, borderRadius: 4, borderWidth: 2, borderColor: theme.colors.primary,
-    marginRight: 12, alignItems: 'center', justifyContent: 'center',
-  },
-  checked: { backgroundColor: theme.colors.primary },
-  checkMark: { color: 'white', fontWeight: '900', fontSize: 14, lineHeight: 14 },
   body: { flex: 1 },
-  title: { fontSize: theme.font.body, color: theme.colors.text, fontWeight: '600' },
-  strike: { textDecorationLine: 'line-through', color: theme.colors.textMuted },
-  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
-  meta: { fontSize: theme.font.small, color: theme.colors.textMuted },
+  title: { fontFamily: theme.font.serif, fontSize: 20, color: theme.colors.ink },
+  done: { color: theme.colors.textFaint, textDecorationLine: 'line-through' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  meta: { fontFamily: theme.font.sans, fontSize: 13, color: theme.colors.textFaint, flexShrink: 1 },
+  chev: { fontSize: 20, color: theme.colors.checkOff },
 });

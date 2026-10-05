@@ -1,10 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, SectionList, Pressable, StyleSheet, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { theme } from '../theme';
 import { useHousehold } from '../state/HouseholdContext';
 import { INVENTORY_STATES } from '../state/inventory';
+import { useUI } from '../components/UIProvider';
+import { SubScreen } from '../components/SubScreen';
+import { Dot, EmptyState } from '../components/hearth';
 import type { InventoryEntry, InventoryState } from '../types';
+
+const c = theme.colors;
+const f = theme.font;
 
 const stateLabel: Record<InventoryState, string> = {
   available: 'Available',
@@ -15,10 +20,10 @@ const stateLabel: Record<InventoryState, string> = {
 
 /** Three sections (plan_06): "almost finished" sits under Running low, tagged, at the top. */
 type SectionKey = 'available' | 'low' | 'out';
-const SECTIONS: { key: SectionKey; title: string; states: InventoryState[] }[] = [
-  { key: 'available', title: 'Available', states: ['available'] },
-  { key: 'low', title: 'Running low', states: ['almost_finished', 'running_low'] },
-  { key: 'out', title: 'Out of stock', states: ['out'] },
+const SECTIONS: { key: SectionKey; title: string; dot: string; states: InventoryState[] }[] = [
+  { key: 'low', title: 'Running low', dot: c.amber, states: ['almost_finished', 'running_low'] },
+  { key: 'out', title: 'Out of stock', dot: c.red, states: ['out'] },
+  { key: 'available', title: 'Available', dot: c.green, states: ['available'] },
 ];
 
 const DAY_MS = 86_400_000;
@@ -31,6 +36,7 @@ function updatedAgo(iso: string, now: Date): string {
 
 export function PantryScreen() {
   const { state, setInventory } = useHousehold();
+  const { ask } = useUI();
   const [collapsed, setCollapsed] = useState<Set<SectionKey>>(new Set());
 
   const productName = (id: string) => state.products.find((p) => p.id === id)?.name ?? id;
@@ -41,9 +47,9 @@ export function PantryScreen() {
       const rows = state.inventory
         .filter((i) => s.states.includes(i.state))
         .sort((a, b) => s.states.indexOf(a.state) - s.states.indexOf(b.state));
-      return { ...s, count: rows.length, now, data: collapsed.has(s.key) ? [] : rows };
-    }).filter((s) => s.count > 0);
-  }, [state.inventory, collapsed]);
+      return { ...s, now, rows };
+    }).filter((s) => s.rows.length > 0);
+  }, [state.inventory]);
 
   const toggle = (key: SectionKey) =>
     setCollapsed((prev) => {
@@ -53,85 +59,58 @@ export function PantryScreen() {
       return next;
     });
 
-  const changeState = (entry: InventoryEntry) => {
-    Alert.alert(
-      productName(entry.productId),
-      'Change state to:',
-      [
-        ...INVENTORY_STATES.filter((s) => s !== entry.state).map((s) => ({
-          text: stateLabel[s],
-          onPress: () => setInventory({ productId: entry.productId, state: s }),
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ],
-    );
-  };
+  const changeState = (entry: InventoryEntry) => ask({
+    title: productName(entry.productId),
+    body: `Now: ${stateLabel[entry.state].toLowerCase()}. Change it to…`,
+    options: INVENTORY_STATES.filter((s) => s !== entry.state).map((s) => ({
+      label: stateLabel[s],
+      kind: 'outline' as const,
+      onPress: () => setInventory({ productId: entry.productId, state: s }),
+    })),
+  });
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Pantry</Text>
-        <Text style={styles.subtitle}>Tell me in chat — or long-press an item to change it</Text>
-      </View>
+    <SubScreen kicker="Pantry" title="What's at home" sub="Tell Hearth in your words — or tap an item to change it.">
       {state.inventory.length === 0 ? (
-        <View style={styles.empty}><Text style={styles.emptyText}>No pantry info yet.</Text></View>
+        <EmptyState title="Nothing noted yet" body="Say “rice is almost finished” and it shows up here." />
       ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={(i) => i.productId}
-          stickySectionHeadersEnabled={false}
-          renderSectionHeader={({ section }) => (
-            <Pressable onPress={() => toggle(section.key)} style={styles.sectionHeader}>
-              <Text style={styles.section}>{section.title} · {section.count}</Text>
-              <Text style={styles.chevron}>{collapsed.has(section.key) ? '▸' : '▾'}</Text>
-            </Pressable>
-          )}
-          renderItem={({ item, section }) => (
-            <Pressable onLongPress={() => changeState(item)} style={styles.row}>
-              <View style={styles.rowMain}>
-                <Text style={styles.rowTitle}>{productName(item.productId)}</Text>
-                <Text style={styles.rowMeta}>
-                  {item.approxQty != null ? `~${item.approxQty} ${item.approxUnit} · ` : ''}updated {updatedAgo(item.updatedAt, section.now)}
-                </Text>
-              </View>
-              {item.state === 'almost_finished' && (
-                <Text style={styles.tag}>Almost finished</Text>
-              )}
-            </Pressable>
-          )}
-        />
+        <ScrollView contentContainerStyle={styles.page}>
+          {sections.map((section) => (
+            <View key={section.key}>
+              <Pressable onPress={() => toggle(section.key)} style={styles.sectionHead}>
+                <Dot color={section.dot} />
+                <Text style={styles.sectionTitle}>{section.title.toUpperCase()}</Text>
+                <Text style={styles.sectionNote}>{section.rows.length}  {collapsed.has(section.key) ? '+' : '–'}</Text>
+              </Pressable>
+              {!collapsed.has(section.key) && section.rows.map((item) => (
+                <Pressable key={item.productId} onPress={() => changeState(item)} style={styles.row}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{productName(item.productId)}</Text>
+                    <Text style={styles.rowMeta}>
+                      {item.approxQty != null ? `~${item.approxQty} ${item.approxUnit} · ` : ''}updated {updatedAgo(item.updatedAt, section.now)}
+                    </Text>
+                  </View>
+                  {item.state === 'almost_finished' && <Text style={styles.tag}>Almost finished</Text>}
+                </Pressable>
+              ))}
+            </View>
+          ))}
+        </ScrollView>
       )}
-    </SafeAreaView>
+    </SubScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.bg },
-  header: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: theme.colors.surfaceAlt },
-  title: { fontSize: theme.font.title, fontWeight: '700', color: theme.colors.text },
-  subtitle: { fontSize: theme.font.small, color: theme.colors.textMuted },
-  sectionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 10,
-  },
-  section: {
-    color: theme.colors.textMuted, fontWeight: '700', fontSize: theme.font.small,
-    textTransform: 'uppercase', letterSpacing: 1,
-  },
-  chevron: { color: theme.colors.textMuted, fontSize: theme.font.body },
-  row: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 12, backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1, borderColor: theme.colors.border,
-  },
-  rowMain: { flex: 1 },
-  rowTitle: { fontSize: theme.font.body, color: theme.colors.text, fontWeight: '600' },
-  rowMeta: { color: theme.colors.textMuted, fontSize: theme.font.small, marginTop: 2 },
+  page: { paddingHorizontal: theme.gutter, paddingBottom: 60 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 30, marginBottom: 4 },
+  sectionTitle: { flex: 1, fontFamily: f.sansHeavy, fontSize: 13, letterSpacing: 3, color: c.ink },
+  sectionNote: { fontFamily: f.sansMedium, fontSize: 14, color: c.textFaint },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderTopWidth: 1, borderTopColor: c.hairline },
+  rowTitle: { fontFamily: f.serif, fontSize: 20, color: c.ink },
+  rowMeta: { fontFamily: f.sans, fontSize: 13, color: c.textFaint, marginTop: 2 },
   tag: {
-    color: theme.colors.accent, fontSize: theme.font.small, fontWeight: '700',
-    borderWidth: 1, borderColor: theme.colors.accent, borderRadius: theme.radius.pill,
-    paddingHorizontal: 8, paddingVertical: 2, overflow: 'hidden',
+    fontFamily: f.sansBold, fontSize: 12, color: c.amber, borderWidth: 1, borderColor: c.amber,
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden',
   },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
-  emptyText: { color: theme.colors.textMuted },
 });

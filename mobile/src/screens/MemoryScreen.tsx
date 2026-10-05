@@ -1,10 +1,15 @@
 import React from 'react';
-import { View, Text, SectionList, Pressable, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { theme } from '../theme';
 import { useHousehold } from '../state/HouseholdContext';
+import { useUI } from '../components/UIProvider';
 import { ConfidenceDot } from '../components/ConfidenceDot';
+import { SubScreen } from '../components/SubScreen';
+import { EmptyState, SectionHeading } from '../components/hearth';
 import { confidenceLevel, effectiveConfidence, isStale } from '../state/memory';
+
+const c = theme.colors;
+const f = theme.font;
 
 interface MemoryRow {
   key: string;
@@ -18,8 +23,10 @@ interface MemoryRow {
   onForget: () => void;
 }
 
+/** Household memory: the usuals and "what you mean by…", each with how sure Hearth is. */
 export function MemoryScreen() {
   const { state, forgetPreference, forgetAliasPreference } = useHousehold();
+  const { ask } = useUI();
   const productName = (id: string) => state.products.find((p) => p.id === id)?.name ?? id;
   const now = new Date();
 
@@ -42,7 +49,7 @@ export function MemoryScreen() {
 
   const meanings: MemoryRow[] = state.aliasPreferences.map((a) => ({
     key: `alias_${a.disambiguationGroup}`,
-    title: `"${a.disambiguationGroup}"`,
+    title: `“${a.disambiguationGroup}”`,
     meta: `usually means ${productName(a.productId).toLowerCase()}`,
     confidence: effectiveConfidence(a, now),
     stale: isStale(a, now),
@@ -57,60 +64,55 @@ export function MemoryScreen() {
     { title: 'What you mean by…', data: meanings },
   ].filter((s) => s.data.length > 0);
 
+  const forget = (row: MemoryRow) => ask({
+    title: `Forget ${row.title}?`,
+    body: 'Hearth will ask again next time instead of suggesting this.',
+    options: [{ label: 'Forget', kind: 'danger', onPress: row.onForget }],
+  });
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Household memory</Text>
-        <Text style={styles.subtitle}>What I've learned you like</Text>
-      </View>
-      <SectionList
-        sections={sections}
-        keyExtractor={(r) => r.key}
-        renderSectionHeader={({ section }) => <Text style={styles.section}>{section.title}</Text>}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>{item.title}</Text>
-              <Text style={styles.rowMeta}>{item.meta}</Text>
-              <View style={styles.confRow}>
-                <ConfidenceDot level={confidenceLevel(item.confidence)} size={8} />
-                <Text style={styles.rowSub}>
-                  {Math.round(item.confidence * 100)}% sure · confirmed {item.timesConfirmed}×
-                  {item.timesOverridden ? `, changed ${item.timesOverridden}×` : ''}
-                  {item.stale ? ' · not confirmed in a while' : ''}
-                </Text>
-              </View>
-              <Text style={styles.rowSub}>Last confirmed {new Date(item.lastConfirmedAt).toLocaleDateString()}</Text>
+    <SubScreen kicker="Memory" title="What Hearth has learned" sub="Only from things you confirmed.">
+      {sections.length === 0 ? (
+        <EmptyState title="Nothing learned yet" body="When you confirm a usual — like “100 g coriander seeds” — it's kept here." />
+      ) : (
+        <ScrollView contentContainerStyle={styles.page}>
+          {sections.map((s) => (
+            <View key={s.title}>
+              <SectionHeading title={s.title} note={`${s.data.length}`} style={{ marginTop: 28 }} />
+              {s.data.map((item) => (
+                <View key={item.key} style={styles.row}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{item.title}</Text>
+                    <Text style={styles.rowMeta}>{item.meta}</Text>
+                    <View style={styles.confRow}>
+                      <ConfidenceDot level={confidenceLevel(item.confidence)} size={7} />
+                      <Text style={styles.rowSub}>
+                        {Math.round(item.confidence * 100)}% sure · confirmed {item.timesConfirmed}×
+                        {item.timesOverridden ? `, changed ${item.timesOverridden}×` : ''}
+                        {item.stale ? ' · not confirmed in a while' : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.rowSub}>Last confirmed {new Date(item.lastConfirmedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
+                  </View>
+                  <Pressable onPress={() => forget(item)} hitSlop={12}>
+                    <Text style={styles.forget}>Forget</Text>
+                  </Pressable>
+                </View>
+              ))}
             </View>
-            <Pressable onPress={item.onForget} hitSlop={12}>
-              <Text style={styles.forget}>Forget</Text>
-            </Pressable>
-          </View>
-        )}
-        ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyText}>Nothing learned yet.</Text></View>}
-      />
-    </SafeAreaView>
+          ))}
+        </ScrollView>
+      )}
+    </SubScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.bg },
-  header: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: theme.colors.surfaceAlt },
-  title: { fontSize: theme.font.title, fontWeight: '700', color: theme.colors.text },
-  subtitle: { fontSize: theme.font.small, color: theme.colors.textMuted },
-  section: {
-    paddingHorizontal: 12, paddingTop: 14, paddingBottom: 6, color: theme.colors.textMuted,
-    fontSize: theme.font.small, textTransform: 'uppercase', letterSpacing: 1, backgroundColor: theme.colors.bg,
-  },
-  row: {
-    flexDirection: 'row', alignItems: 'center', padding: 12,
-    backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderColor: theme.colors.border,
-  },
-  rowTitle: { fontSize: theme.font.body, color: theme.colors.text, fontWeight: '600' },
-  rowMeta: { color: theme.colors.text, marginTop: 2 },
-  confRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  rowSub: { color: theme.colors.textMuted, fontSize: theme.font.small, marginTop: 2 },
-  forget: { color: theme.colors.danger, fontWeight: '600', padding: 6 },
-  empty: { padding: 30, alignItems: 'center' },
-  emptyText: { color: theme.colors.textMuted },
+  page: { paddingHorizontal: theme.gutter, paddingBottom: 60 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 15, borderTopWidth: 1, borderTopColor: c.hairline },
+  rowTitle: { fontFamily: f.serif, fontSize: 21, color: c.ink },
+  rowMeta: { fontFamily: f.serifItalic, fontSize: 17, color: c.textSoft, marginTop: 2 },
+  confRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  rowSub: { fontFamily: f.sans, fontSize: 13, color: c.textFaint, marginTop: 2 },
+  forget: { fontFamily: f.sansBold, fontSize: 14, color: c.accent, paddingTop: 4, paddingLeft: 12 },
 });

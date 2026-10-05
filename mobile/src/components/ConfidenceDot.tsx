@@ -9,5 +9,5 @@ export function ConfidenceDot({ level, size = 10 }: { level: Confidence; size?: 
 }
 
 const styles = StyleSheet.create({
-  dot: { marginRight: 6 },
+  dot: { marginRight: 7 },
 });

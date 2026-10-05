@@ -41,8 +41,8 @@ A functional Expo (React Native + TypeScript) app on the user's phone that prove
 **Framework choice:** Expo/React Native over Flutter — installs on the phone via "Expo Go" + QR code (no Xcode/Android Studio), JS/TS matches the future HTTP backend cleanly, chat UIs are trivial in RN.
 
 **Sandbox scope (in):**
-- Bottom-tab navigation: Chat, List, Pantry, Memory, History.
-- Chat screen with bubbles + quick-reply chips for clarifications.
+- UI follows the "Hearth" family-journal design (`Hearth.html`): onboarding → bottom tabs Home · Tasks · (+) · Groceries · More. The + opens "Type or speak" (`ComposeSheet`), which runs the AI turn and shows clarification chips inline; More holds Conversation, Pantry, Memory, History.
+- Conversation screen with bubbles + quick-reply chips for clarifications.
 - List screen grouped by category, with Item Detail modal showing product/qty/brand/variant/confidence/rationale/source.
 - Pantry (Available / Running low / Out of stock).
 - Memory screen (read-only view of learned household preferences).
@@ -77,7 +77,7 @@ AI_Grocery_Agent/
 │   ├── package.json / tsconfig.json / app.json
 │   └── src/
 │       ├── navigation/
-│       ├── screens/          # ChatScreen, ListScreen, ItemDetailModal, PantryScreen, MemoryScreen, HistoryScreen
+│       ├── screens/          # Onboarding, Home, Tasks, List (Groceries), More, Chat (Conversation), Pantry, Memory, History, AddSheet, ComposeSheet, ItemDetailModal
 │       ├── components/       # ChatBubble, QuickReplyChip, ItemRow, ConfidenceDot
 │       ├── state/            # HouseholdContext + AsyncStorage persistence
 │       ├── services/         # AIService interface + MockAIService + HttpAIService stub + factory
@@ -148,15 +148,15 @@ npx expo start
 
 Executed on the phone, in order:
 
-1. "get coriander" → agent asks leaves/seeds/powder (3 chips).
+1. + → Type or speak → "get coriander" → agent asks leaves/seeds/powder (3 chips).
 2. Tap "Coriander seeds" → agent asks quantity (chips 100 g / 200 g / custom).
 3. Tap "100 g" → agent confirms + offers "save as usual" chip.
-4. Tap "Yes, save" → Memory tab shows the new preference.
+4. Tap "Yes, save" → More → Memory shows the new preference.
 5. "get tomatoes I don't know how much" → agent proposes 1 kg from household memory (chips Yes 1 kg / ½ kg / 2 kg).
-6. List tab: Coriander seeds under Spices, Tomatoes under Vegetables.
+6. Groceries tab: Coriander seeds under Spices, Tomatoes under Vegetables.
 7. Tap Tomatoes → Item Detail shows rationale + high confidence + source=household_memory.
-8. "rice is almost finished" → Pantry shows rice as almost finished; agent offers "Yes, 5 kg Aashirvaad" / "Other amount" / "Not now". Tap "Yes" → list adds Aashirvaad 5 kg with rationale (plan_06: low stock only *proposes*).
-9. "mark tomatoes purchased" → item checked; History tab shows new row.
+8. "rice is almost finished" → More → Pantry shows rice as almost finished; agent offers "Yes, 5 kg Aashirvaad" / "Other amount" / "Not now". Tap "Yes" → list adds Aashirvaad 5 kg with rationale (plan_06: low stock only *proposes*).
+9. "mark tomatoes purchased" → item checked; More → History shows new row.
 10. Kill/reopen app → state persists.
 
 All 10 passing = green light for Phase 2 (real backend).

@@ -9,19 +9,22 @@ interface Props {
   system?: boolean;
   text: string;
   chips?: string[];
+  /** The chip pre-filled from household memory — drawn filled. */
+  suggestedChip?: string;
   onChipPress?: (label: string) => void;
 }
 
-export function ChatBubble({ role, text, system, chips, onChipPress }: Props) {
+/** Journal-style turn: Mom's words in an ink bubble on the right, Hearth's in serif on the paper. */
+export function ChatBubble({ role, text, system, chips, suggestedChip, onChipPress }: Props) {
   const isUser = role === 'user';
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
       <View style={[styles.bubble, isUser ? styles.userBubble : styles.agentBubble, system && styles.systemBubble]}>
-        <Text style={[styles.text, system && styles.systemText]}>{text}</Text>
+        <Text style={[isUser ? styles.userText : styles.agentText, system && styles.systemText]}>{text}</Text>
         {chips && chips.length > 0 && (
           <View style={styles.chipRow}>
             {chips.map((c) => (
-              <QuickReplyChip key={c} label={c} onPress={() => onChipPress?.(c)} />
+              <QuickReplyChip key={c} label={c} suggested={c === suggestedChip} onPress={() => onChipPress?.(c)} />
             ))}
           </View>
         )}
@@ -31,24 +34,15 @@ export function ChatBubble({ role, text, system, chips, onChipPress }: Props) {
 }
 
 const styles = StyleSheet.create({
-  row: { paddingHorizontal: 10, marginVertical: 4, flexDirection: 'row' },
+  row: { paddingHorizontal: theme.gutter - 8, marginVertical: 6, flexDirection: 'row' },
   rowLeft: { justifyContent: 'flex-start' },
   rowRight: { justifyContent: 'flex-end' },
-  bubble: {
-    maxWidth: '82%',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: theme.radius.lg,
-  },
-  userBubble: { backgroundColor: theme.colors.userBubble, borderTopRightRadius: 4 },
-  agentBubble: {
-    backgroundColor: theme.colors.agentBubble,
-    borderTopLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  systemBubble: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.surfaceAlt },
-  text: { color: theme.colors.text, fontSize: theme.font.body },
-  systemText: { color: theme.colors.textMuted },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
+  bubble: { maxWidth: '86%' },
+  userBubble: { backgroundColor: theme.colors.ink, borderRadius: 16, borderBottomRightRadius: 4, paddingHorizontal: 14, paddingVertical: 10 },
+  agentBubble: { paddingVertical: 4, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: theme.colors.accentSoft },
+  systemBubble: { borderLeftColor: theme.colors.green },
+  userText: { fontFamily: theme.font.sans, fontSize: 16, lineHeight: 22, color: theme.colors.onDark },
+  agentText: { fontFamily: theme.font.serif, fontSize: 19, lineHeight: 26, color: theme.colors.ink },
+  systemText: { fontFamily: theme.font.serifItalic, color: theme.colors.textSoft },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 2 },
 });
