@@ -13,11 +13,12 @@ const f = theme.font;
 /** Everything else: the conversation log, pantry, memory, history, and sandbox reset. */
 export function MoreScreen({ navigation }: { navigation: any }) {
   const { state, reset } = useHousehold();
-  const { resetProfile } = useProfile();
+  const { me, resetProfile } = useProfile();
   const { ask } = useUI();
 
   const low = state.inventory.filter((i) => i.state !== 'available').length;
   const rows = [
+    { route: 'Profile', title: 'Your profile', desc: `${me.name} · ${me.relation}` },
     { route: 'Conversation', title: 'Conversation', desc: `${state.turns.length} messages with Hearth` },
     { route: 'Pantry', title: 'Pantry', desc: low ? `${low} running low or out` : 'What the home keeps in stock' },
     { route: 'Memory', title: 'Household memory', desc: `${state.preferences.length + state.aliasPreferences.length} things learned` },

@@ -28,14 +28,14 @@ export default function App() {
 
   return (
     <SafeAreaProvider style={{ backgroundColor: theme.colors.bg }}>
-      <HouseholdProvider>
-        <ProfileProvider>
+      <ProfileProvider>
+        <HouseholdProvider>
           <UIProvider>
             {fontsLoaded ? <Gate /> : <View style={{ flex: 1, backgroundColor: theme.colors.bg }} />}
             <StatusBar style="dark" />
           </UIProvider>
-        </ProfileProvider>
-      </HouseholdProvider>
+        </HouseholdProvider>
+      </ProfileProvider>
     </SafeAreaProvider>
   );
 }

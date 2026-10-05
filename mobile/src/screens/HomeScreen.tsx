@@ -88,7 +88,11 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           kicker={now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
           title={greeting(now)}
           italic={me?.name}
-          right={me ? <View style={{ marginTop: 4 }}><Avatar initial={me.name[0]} color={me.color} size={44} /></View> : null}
+          right={me ? (
+            <Pressable onPress={() => navigation.navigate('Profile')} hitSlop={8} style={{ marginTop: 4 }} accessibilityLabel="Your profile">
+              <Avatar initial={me.name[0]} color={me.color} size={44} />
+            </Pressable>
+          ) : null}
         />
 
         <SectionHeading title="Today" note={cards.length ? `${cards.length} ${cards.length === 1 ? 'thing' : 'things'}` : undefined} style={{ marginTop: 26 }} />
@@ -133,14 +137,14 @@ export function HomeScreen({ navigation }: { navigation: any }) {
 
         <SectionHeading title="Your family" />
         {activeMembers.map((m) => (
-          <View key={m.name} style={styles.famRow}>
+          <Pressable key={m.id} onPress={() => navigation.navigate('Profile', { memberId: m.id })} style={styles.famRow}>
             <Avatar initial={m.name[0]} color={m.color} size={42} />
             <View style={{ flex: 1 }}>
               <Text style={styles.famName}>{m.name}</Text>
-              <Text style={styles.famRole}>{m.role}</Text>
+              <Text style={styles.famRole}>{m.relation}</Text>
             </View>
-            {m === me ? <Text style={styles.famNote}>This phone</Text> : null}
-          </View>
+            {m.id === me.id ? <Text style={styles.famNote}>This phone</Text> : null}
+          </Pressable>
         ))}
       </ScrollView>
     </SafeAreaView>

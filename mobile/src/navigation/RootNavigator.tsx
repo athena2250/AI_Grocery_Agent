@@ -15,6 +15,7 @@ import { ChatScreen } from '../screens/ChatScreen';
 import { PantryScreen } from '../screens/PantryScreen';
 import { MemoryScreen } from '../screens/MemoryScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
+import { ProfileScreen } from '../screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -90,6 +91,7 @@ export function RootNavigator() {
         <Stack.Screen name="Pantry" component={PantryScreen} />
         <Stack.Screen name="Memory" component={MemoryScreen} />
         <Stack.Screen name="History" component={HistoryScreen} />
+        <Stack.Screen name="Profile" component={ProfileScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

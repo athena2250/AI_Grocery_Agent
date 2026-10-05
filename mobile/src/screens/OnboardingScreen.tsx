@@ -52,11 +52,11 @@ export function OnboardingScreen() {
             <Text style={styles.lede}>Add the people in your home. The first person ticked is you.</Text>
             <View style={styles.list}>
               {profile.members.map((m, i) => (
-                <Pressable key={m.name} onPress={() => toggleMember(i)} style={styles.row}>
+                <Pressable key={m.id} onPress={() => toggleMember(i)} style={styles.row}>
                   <Avatar initial={m.name[0]} color={m.color} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowName}>{m.name}</Text>
-                    <Text style={styles.rowMeta}>{m.role}</Text>
+                    <Text style={styles.rowMeta}>{m.relation}</Text>
                   </View>
                   <CheckCircle on={m.on} />
                 </Pressable>

@@ -106,6 +106,8 @@ export interface ListItem {
   source: Source;
   rationale: string;
   status: ItemStatus;
+  /** Who put it on the list (backend `added_by_member_id`). Absent on rows from before profiles. */
+  addedByMemberId?: string;
 }
 
 export interface Purchase {
@@ -116,6 +118,8 @@ export interface Purchase {
   unit: string | null;
   brand: string | null;
   purchasedAt: string;
+  /** Who ticked it off (backend `purchase.member_id`). Absent on seed / older rows. */
+  memberId?: string;
 }
 
 export interface ProposedItem {

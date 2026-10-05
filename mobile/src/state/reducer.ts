@@ -25,8 +25,9 @@ import { mergeIntoDraft, pendingItems, visibleItems } from './planner';
 export type Action =
   | { type: 'HYDRATE'; payload: HouseholdState }
   | { type: 'ADD_TURN'; turn: Turn }
-  | { type: 'APPLY_AI'; response: AIResponse }
-  | { type: 'MARK_PURCHASED_BY_ID'; itemId: string }
+  /** `by`: the member using this phone — new list rows and purchases are tagged with it. */
+  | { type: 'APPLY_AI'; response: AIResponse; by?: string }
+  | { type: 'MARK_PURCHASED_BY_ID'; itemId: string; by?: string }
   | { type: 'REMOVE_ITEM'; itemId: string }
   | { type: 'SET_INVENTORY'; update: InventoryUpdate }
   | { type: 'SAVE_AS_USUAL'; fields: UsualFields }
@@ -34,7 +35,7 @@ export type Action =
   | { type: 'FORGET_ALIAS_PREFERENCE'; disambiguationGroup: string }
   | { type: 'APPROVE_LIST' }
   /** Mom tapped Add on a suggestion — a pantry restock (planner `lowStockProposals`) or a purchase prediction (plan_10). */
-  | { type: 'ACCEPT_RESTOCK'; proposal: ProposedItem }
+  | { type: 'ACCEPT_RESTOCK'; proposal: ProposedItem; by?: string }
   | { type: 'DISMISS_RESTOCK'; productId: string }
   | { type: 'DISMISS_PREDICTION'; productId: string }
   | { type: 'RESET' };
@@ -42,11 +43,22 @@ export type Action =
 let _c = 0;
 export const uid = (p: string) => `${p}_${Date.now()}_${_c++}`;
 
+/** New rows get `by`; a row that was already there keeps whoever added it first, even when refined. */
+function stampAdder(before: ListItem[], after: ListItem[], by: string | undefined): ListItem[] {
+  if (!by) return after;
+  const prior = new Map(before.map((li) => [li.id, li.addedByMemberId]));
+  return after.map((li) => {
+    const addedByMemberId = prior.has(li.id) ? prior.get(li.id) : by;
+    return li.addedByMemberId === addedByMemberId ? li : { ...li, addedByMemberId };
+  });
+}
+
 /** Plan the proposals into the list; any addition reopens an approved list as a draft (plan_08). */
-function addToList(state: HouseholdState, proposed: ProposedItem[]): Pick<HouseholdState, 'listItems' | 'list'> {
+function addToList(state: HouseholdState, proposed: ProposedItem[], by?: string): Pick<HouseholdState, 'listItems' | 'list'> {
   if (!proposed.length) return { listItems: state.listItems, list: state.list };
+  const merged = mergeIntoDraft(state.listItems, proposed, state.products, () => uid('it'));
   return {
-    listItems: mergeIntoDraft(state.listItems, proposed, state.products, () => uid('it')),
+    listItems: stampAdder(state.listItems, merged, by),
     list: state.list.status === 'approved' ? { ...state.list, status: 'draft' } : state.list,
   };
 }
@@ -76,7 +88,7 @@ export function mergePending(prior: Clarification[], r: AIResponse): Clarificati
 
 /** Append purchases to history, fold each into household memory, and restock the pantry (all confirmed actions). */
 function recordPurchases(
-  state: HouseholdState, items: ListItem[], now: Date,
+  state: HouseholdState, items: ListItem[], now: Date, by?: string,
 ): Pick<HouseholdState, 'history' | 'preferences' | 'inventory'> {
   let preferences = state.preferences;
   const rows: Purchase[] = [];
@@ -93,6 +105,7 @@ function recordPurchases(
       unit: li.unit,
       brand: li.brand,
       purchasedAt: now.toISOString(),
+      ...(by ? { memberId: by } : {}),
     });
   }
   return {
@@ -165,7 +178,7 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       const corrected = new Set((r.corrections ?? []).map((c) => c.itemId));
       // A corrected item is swapped out, not merged into: soft-remove it before planning the replacement.
       const withoutCorrected = state.listItems.map((li) => (corrected.has(li.id) ? { ...li, status: 'removed' as const } : li));
-      const { list, listItems: planned } = addToList({ ...state, listItems: withoutCorrected }, r.proposedItems);
+      const { list, listItems: planned } = addToList({ ...state, listItems: withoutCorrected }, r.proposedItems, action.by);
       let listItems = planned;
       // Inventory updates
       let inventory = state.inventory;
@@ -182,7 +195,7 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       if (r.purchasesMarked.length) {
         listItems = listItems.map((li) => (r.purchasesMarked.includes(li.id) ? { ...li, status: 'purchased' as const } : li));
         const bought = listItems.filter((li) => r.purchasesMarked.includes(li.id));
-        ({ history, preferences, inventory } = recordPurchases({ ...state, preferences, inventory }, bought, now));
+        ({ history, preferences, inventory } = recordPurchases({ ...state, preferences, inventory }, bought, now, action.by));
       }
       const pendingClarifications = mergePending(state.pendingClarifications, r);
 
@@ -198,7 +211,7 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       return {
         ...state,
         listItems: state.listItems.map((li) => (li.id === action.itemId ? { ...li, status: 'purchased' } : li)),
-        ...recordPurchases(state, [item], new Date()),
+        ...recordPurchases(state, [item], new Date(), action.by),
       };
     }
     case 'REMOVE_ITEM':
@@ -228,7 +241,7 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       const preferences = p.source === 'household_memory' && p.qty != null
         ? confirmPreference(state.preferences, p.productId, new Date())
         : state.preferences;
-      return { ...state, ...addToList(state, [{ ...p, id: uid('it'), needsConfirmation: false }]), preferences };
+      return { ...state, ...addToList(state, [{ ...p, id: uid('it'), needsConfirmation: false }], action.by), preferences };
     }
     case 'DISMISS_RESTOCK':
       return { ...state, dismissedRestocks: dismissRestock(state, state.inventory, action.productId) };

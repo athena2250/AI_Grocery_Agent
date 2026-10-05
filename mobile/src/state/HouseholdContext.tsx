@@ -1,9 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import type { AIResponse, ChatContext, HouseholdState, InventoryUpdate, ProposedItem } from '../types';
 import { initialHouseholdState } from '../data/seed';
 import { loadPersisted, savePersisted, clearPersisted } from './persistence';
 import { buildChatContext as buildContextFor, reducer, uid } from './reducer';
 import type { UsualFields } from './memory';
+import { useProfile } from './ProfileContext';
 
 interface Ctx {
   state: HouseholdState;
@@ -30,6 +31,10 @@ const HouseholdCtx = createContext<Ctx | null>(null);
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialHouseholdState);
   const [hydrated, setHydrated] = React.useState(false);
+  // Who's holding the phone tags what they add or buy; a ref keeps the callbacks below stable.
+  const { me } = useProfile();
+  const by = useRef(me.id);
+  by.current = me.id;
 
   useEffect(() => {
     let mounted = true;
@@ -52,8 +57,8 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const addAgentTurn = useCallback((text: string, chips?: string[], clarificationId?: string) => {
     dispatch({ type: 'ADD_TURN', turn: { id: uid('t'), role: 'agent', text, chips, clarificationId, at: new Date().toISOString() } });
   }, []);
-  const applyAI = useCallback((r: AIResponse) => dispatch({ type: 'APPLY_AI', response: r }), []);
-  const markPurchased = useCallback((itemId: string) => dispatch({ type: 'MARK_PURCHASED_BY_ID', itemId }), []);
+  const applyAI = useCallback((r: AIResponse) => dispatch({ type: 'APPLY_AI', response: r, by: by.current }), []);
+  const markPurchased = useCallback((itemId: string) => dispatch({ type: 'MARK_PURCHASED_BY_ID', itemId, by: by.current }), []);
   const removeItem = useCallback((itemId: string) => dispatch({ type: 'REMOVE_ITEM', itemId }), []);
   const setInventory = useCallback((u: InventoryUpdate) => dispatch({ type: 'SET_INVENTORY', update: u }), []);
   const saveAsUsual = useCallback((fields: UsualFields) => dispatch({ type: 'SAVE_AS_USUAL', fields }), []);
@@ -63,7 +68,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     [],
   );
   const approveList = useCallback(() => dispatch({ type: 'APPROVE_LIST' }), []);
-  const acceptRestock = useCallback((proposal: ProposedItem) => dispatch({ type: 'ACCEPT_RESTOCK', proposal }), []);
+  const acceptRestock = useCallback((proposal: ProposedItem) => dispatch({ type: 'ACCEPT_RESTOCK', proposal, by: by.current }), []);
   const dismissRestock = useCallback((productId: string) => dispatch({ type: 'DISMISS_RESTOCK', productId }), []);
   const dismissPrediction = useCallback((productId: string) => dispatch({ type: 'DISMISS_PREDICTION', productId }), []);
   const reset = useCallback(async () => {
