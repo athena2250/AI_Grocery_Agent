@@ -175,7 +175,7 @@ export function EmptyState({ icon, kicker = 'Chapter', title, body, cta, onCta }
       <Kicker style={{ letterSpacing: 3 }}>{kicker}</Kicker>
       <Text style={s.emptyTitle}>{title}</Text>
       <Text style={s.emptyBody}>{body}</Text>
-      {cta && onCta ? <Button label={cta} onPress={onCta} kind="accentOutline" compact style={{ marginTop: 24, paddingHorizontal: 26 }} /> : null}
+      {cta && onCta ? <Button label={cta} onPress={onCta} kind="accentOutline" compact style={{ marginTop: 24, paddingHorizontal: 26, alignSelf: 'center' }} /> : null}
     </View>
   );
 }

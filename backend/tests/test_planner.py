@@ -248,7 +248,8 @@ def test_grouped_view_uses_the_fixed_order(session: Session, glist: GroceryList)
 def test_category_order_is_the_plan_order() -> None:
     assert [c.value for c in CATEGORY_ORDER] == [
         "Vegetables", "Fruits", "Dairy", "Rice & Grains", "Pulses", "Spices",
-        "Cooking Essentials", "Snacks", "Beverages", "Household", "Personal Care",
+        "Cooking Essentials", "Snacks", "Beverages", "Detergents", "Cleaning", "Household",
+        "Personal Care", "Other",
     ]  # fmt: skip
 
 

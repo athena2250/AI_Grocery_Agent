@@ -43,8 +43,12 @@ class Category(str, Enum):
     COOKING_ESSENTIALS = "Cooking Essentials"
     SNACKS = "Snacks"
     BEVERAGES = "Beverages"
+    DETERGENTS = "Detergents"
+    CLEANING = "Cleaning"
     HOUSEHOLD = "Household"
     PERSONAL_CARE = "Personal Care"
+    OTHER = "Other"
+    """Not in the catalog and nobody has said where it goes yet."""
 
 
 CATEGORY_ORDER: tuple[Category, ...] = tuple(Category)

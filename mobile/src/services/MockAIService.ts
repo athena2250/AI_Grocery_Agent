@@ -11,6 +11,8 @@ import type { AIService } from './AIService';
 import { confidenceLevel, getAliasPreference, getPreferences } from '../state/memory';
 import { INVENTORY_STATE_LABEL, needsRestock } from '../state/inventory';
 import { parseInventoryPhrase } from './inventoryPhrases';
+import { CATEGORY_ORDER } from '../state/planner';
+import { extractItemName, guessCategory, newProduct, titleCase } from '../state/catalog';
 
 let counter = 0;
 const uid = (p: string) => `${p}_${Date.now()}_${counter++}`;
@@ -30,6 +32,11 @@ function findAliasMatches(text: string, aliases: ProductAlias[]): ProductAlias[]
   if (!hit) return [];
   // Return all aliases with the same surface form (for disambiguation groups)
   return sorted.filter((a) => norm(a.alias) === norm(hit.alias));
+}
+
+/** The brand Mom named by saying it instead of the product ("get surf excel" → Surf Excel), if any. */
+function brandIn(text: string, productId: string, aliases: ProductAlias[]): string | undefined {
+  return findAliasMatches(text, aliases).find((a) => a.productId === productId)?.brand;
 }
 
 function parseQuantity(text: string): { qty: number; unit: string } | null {
@@ -88,7 +95,8 @@ function askProductType(rawText: string, matches: ProductAlias[], ctx: ChatConte
     ...(suggestedOption && options.includes(suggestedOption) ? { suggestedOption } : {}),
   };
   const hint = clar.suggestedOption ? ` (You usually get ${clar.suggestedOption.toLowerCase()}.)` : '';
-  return reply(`Which one — ${options.join(' / ')}?${hint}`, {
+  const brand = matches.find((m) => m.brand)?.brand;
+  return reply(`${brand ? `${brand} — which` : 'Which'} one — ${options.join(' / ')}?${hint}`, {
     intent: 'ADD_ITEMS',
     clarifications: [clar],
   });
@@ -228,11 +236,12 @@ function resolveClarification(pending: Clarification, text: string, ctx: ChatCon
     const chosenProduct = ctx.products.find((p) => norm(p.name) === norm(matchedOption));
     if (!chosenProduct) return null;
     const pref = preferenceFor(ctx.preferences, chosenProduct.id);
-    const ask = askQuantity(matchedOption, chosenProduct, pref?.typicalQty, pref?.typicalUnit);
+    // The original words go along, so a brand said there ("surf excel") survives the quantity question.
+    const ask = askQuantity(pending.itemRawText, chosenProduct, pref?.typicalQty, pref?.typicalUnit);
     if (pref?.typicalQty && pref.typicalUnit) {
       // v1 always-ask: propose the remembered amount, but still confirm it with chips.
       const proposed = makeProposed(chosenProduct, pref.typicalQty, pref.typicalUnit, {
-        brand: pref.preferredBrand,
+        brand: brandIn(pending.itemRawText, chosenProduct.id, ctx.aliases) ?? pref.preferredBrand,
         variant: pref.preferredVariant,
         source: 'household_memory',
         confidence: confidenceLevel(pref.confidence),
@@ -264,9 +273,10 @@ function resolveClarification(pending: Clarification, text: string, ctx: ChatCon
       });
     }
     const pref = preferenceFor(ctx.preferences, productId);
+    const brand = brandIn(pending.itemRawText, productId, ctx.aliases) ?? pref?.preferredBrand;
     const proposed = {
       ...makeProposed(product, qty, unit, {
-        brand: pref?.preferredBrand,
+        brand,
         source: 'user',
         confidence: 'high',
         rationale: `You said ${qty} ${unit}.`,
@@ -274,8 +284,8 @@ function resolveClarification(pending: Clarification, text: string, ctx: ChatCon
       // Same id as the provisional item this question was confirming → the planner replaces it.
       ...(pending.itemId ? { id: pending.itemId } : {}),
     };
-    const savePref = askSavePref(product, qty, unit, pref?.preferredBrand);
-    return reply(`Added ${product.name.toLowerCase()} — ${qty} ${unit}. Save as usual?`, {
+    const savePref = askSavePref(product, qty, unit, brand);
+    return reply(`Added ${brand ? `${brand} ` : ''}${product.name.toLowerCase()} — ${qty} ${unit}. Save as usual?`, {
       intent: 'CLARIFY_RESPONSE',
       proposedItems: [proposed],
       clarifications: [savePref],
@@ -314,6 +324,29 @@ function resolveClarification(pending: Clarification, text: string, ctx: ChatCon
       });
     }
     return { ...askQuantity(product.name, product, pref?.typicalQty, pref?.typicalUnit), intent: 'CLARIFY_RESPONSE' };
+  }
+
+  if (pending.kind === 'category') {
+    const category = CATEGORY_ORDER.find((c) => c === matchedOption);
+    const name = extractItemName(pending.itemRawText);
+    if (!category || !name) return null;
+    // The state layer files this product when it sees the answer; same name → same id.
+    const product = newProduct(name, category);
+    const where = category === 'Other' ? 'under Other' : `under ${category}`;
+    const parsed = parseQuantity(pending.itemRawText);
+    if (parsed) {
+      const proposed = makeProposed(product, parsed.qty, parsed.unit, {
+        source: 'user',
+        confidence: 'high',
+        rationale: `You said ${parsed.qty} ${parsed.unit}. You put ${product.name} ${where}.`,
+      });
+      return reply(`Added ${product.name} — ${parsed.qty} ${parsed.unit}, ${where}. I'll remember where it goes.`, {
+        intent: 'CLARIFY_RESPONSE',
+        proposedItems: [proposed],
+      });
+    }
+    const ask = askQuantity(pending.itemRawText, product);
+    return { ...ask, reply: `Okay, ${product.name} goes ${where} — I'll remember. ${ask.reply}`, intent: 'CLARIFY_RESPONSE' };
   }
 
   if (pending.kind === 'brand') {
@@ -450,6 +483,33 @@ function handleCorrection(text: string, ctx: ChatContext): AIResponse | null {
   return null;
 }
 
+/**
+ * "get harpic" for something the catalog doesn't know: ask where it goes, the
+ * keyword guess as the pre-filled chip. Nothing is filed until Mom taps — the
+ * answer teaches the catalog (reducer `learnCatalog`).
+ */
+function handleUnknownItem(text: string): AIResponse | null {
+  const name = extractItemName(text);
+  if (!name) return null;
+  const guess = guessCategory(name);
+  const rest = CATEGORY_ORDER.filter((c) => c !== guess && c !== 'Other');
+  const options = guess ? [guess, ...rest, 'Other'] : [...rest, 'Other'];
+  const label = titleCase(name);
+  const clar: Clarification = {
+    id: uid('cl'),
+    itemRawText: text,
+    kind: 'category',
+    question: `Where does ${label} go?`,
+    options,
+    ...(guess ? { suggestedOption: guess } : {}),
+  };
+  const hint = guess ? ` Looks like ${guess} to me.` : '';
+  return reply(`I don't know ${label} yet — which section should it go in?${hint}`, {
+    intent: 'ADD_ITEMS',
+    clarifications: [clar],
+  });
+}
+
 function handleAddItems(text: string, ctx: ChatContext): AIResponse | null {
   const t = norm(text);
   const usual = /\busual\b|\bsame as usual\b|\blike always\b/.test(t);
@@ -465,6 +525,8 @@ function handleAddItems(text: string, ctx: ChatContext): AIResponse | null {
   const product = productById(ctx.products, matches[0].productId)!;
   const pref = preferenceFor(ctx.preferences, product.id);
   const parsedQty = parseQuantity(text);
+  // A brand said now beats the remembered one (principle 7).
+  const saidBrand = matches[0].brand;
 
   // "usual biscuits" style — needs something remembered to stand on.
   if (usual) {
@@ -488,12 +550,12 @@ function handleAddItems(text: string, ctx: ChatContext): AIResponse | null {
   // Explicit quantity in the message
   if (parsedQty) {
     const proposed = makeProposed(product, parsedQty.qty, parsedQty.unit, {
-      brand: pref?.preferredBrand,
+      brand: saidBrand ?? pref?.preferredBrand,
       source: 'user',
       confidence: 'high',
-      rationale: `You said ${parsedQty.qty} ${parsedQty.unit}.`,
+      rationale: `You said ${saidBrand ? `${saidBrand}, ` : ''}${parsedQty.qty} ${parsedQty.unit}.`,
     });
-    return reply(`Added ${product.name.toLowerCase()} — ${parsedQty.qty} ${parsedQty.unit}.`, {
+    return reply(`Added ${saidBrand ? `${saidBrand} ` : ''}${product.name.toLowerCase()} — ${parsedQty.qty} ${parsedQty.unit}.`, {
       intent: 'ADD_ITEMS',
       proposedItems: [proposed],
     });
@@ -504,7 +566,7 @@ function handleAddItems(text: string, ctx: ChatContext): AIResponse | null {
   if (dontKnow && pref?.typicalQty && pref.typicalUnit) {
     const { typicalQty: qty, typicalUnit: unit } = pref;
     const proposed = makeProposed(product, qty, unit, {
-      brand: pref.preferredBrand,
+      brand: saidBrand ?? pref.preferredBrand,
       source: 'household_memory',
       confidence: confidenceLevel(pref.confidence),
       rationale: `You usually get ${qty} ${unit}.`,
@@ -568,6 +630,9 @@ export class MockAIService implements AIService {
 
     const add = handleAddItems(trimmed, ctx);
     if (add) return add;
+
+    const unknown = handleUnknownItem(trimmed);
+    if (unknown) return unknown;
 
     return reply(`I didn't catch that — could you say it another way? (Try "get tomatoes" or "rice is almost finished".)`);
   }

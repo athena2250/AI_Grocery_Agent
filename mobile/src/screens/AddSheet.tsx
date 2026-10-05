@@ -11,12 +11,13 @@ const c = theme.colors;
 
 /**
  * The + sheet: Add task · Add section · Additional information, then "Fill
- * with Hearth AI". Groceries hand off to the grocery AI (ComposeSheet); every
+ * with Hearth AI". A grocery item goes to Add item (AddItemSheet); other grocery
+ * text to the grocery AI (ComposeSheet); every
  * other section is filled by `fillTask`, which asks — as chips — for whoever
  * does it and by when when the words don't say. Save stays off until it's complete.
  */
-export function AddSheet({ visible, onClose, onCompose }: {
-  visible: boolean; onClose: () => void; onCompose: (seed?: string) => void;
+export function AddSheet({ visible, onClose, onCompose, onAddItem }: {
+  visible: boolean; onClose: () => void; onCompose: (seed?: string) => void; onAddItem: (seed?: string) => void;
 }) {
   const { flash } = useUI();
   const { me, activeMembers } = useProfile();
@@ -35,6 +36,13 @@ export function AddSheet({ visible, onClose, onCompose }: {
   const edit = <T,>(set: (v: T) => void) => (v: T) => { set(v); setDraft(null); };
 
   const fill = () => {
+    // One grocery item → "Add item" (identify it, then its details); free text with no item name → the grocery AI.
+    if (section === 'Groceries' && title.trim()) {
+      const seed = title.trim();
+      reset();
+      onAddItem(seed);
+      return;
+    }
     if (section === 'Groceries') {
       compose([title, info].map((s) => s.trim()).filter(Boolean).join(', '));
       return;

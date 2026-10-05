@@ -9,6 +9,8 @@ import { Avatar, Button, Dot, Masthead, SectionHeading } from '../components/hea
 import { pendingItems } from '../state/planner';
 import { homeSuggestions } from '../state/prediction';
 import { useAddProposal } from './useAddProposal';
+import { useTasks } from '../state/TasksContext';
+import { SECTIONS } from '../state/tasks';
 
 const c = theme.colors;
 const f = theme.font;
@@ -39,6 +41,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
   const { state, dismissRestock } = useHousehold();
   const { me, profile } = useProfile();
   const { openAdd } = useUI();
+  const { tasks } = useTasks();
   const addProposal = useAddProposal();
   const now = new Date();
 
@@ -58,8 +61,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
     });
   }
 
-  // One row per category with something open. Only groceries live on the phone so far;
-  // Home repair, Errands, Bills … join here as their lists arrive with the family feed.
+  // One row per category with something open: groceries, then each task section from +.
   const posterNames = (ids: (string | undefined)[]) =>
     [...new Set(ids)]
       .map((id) => (id === me.id ? 'You' : profile.members.find((m) => m.id === id)?.name))
@@ -73,6 +75,18 @@ export function HomeScreen({ navigation }: { navigation: any }) {
       sub: `${toBuy.length} ${toBuy.length === 1 ? 'item' : 'items'}${from ? ` from ${from}` : ''}`,
       action: approved ? 'View list' : 'Review list',
       onAction: () => navigation.navigate('Groceries'),
+    });
+  }
+  const taskGroups = useMemo(() => SECTIONS
+    .map((section) => ({ section, items: tasks.filter((t) => t.section === section && !t.done) }))
+    .filter((g) => g.items.length), [tasks]);
+  for (const g of taskGroups) {
+    const from = posterNames(g.items.map((t) => t.createdBy));
+    lists.push({
+      key: `tasks_${g.section}`, dot: c.amber, title: g.section,
+      sub: `${g.items.length} ${g.items.length === 1 ? 'task' : 'tasks'}${from ? ` from ${from}` : ''}`,
+      action: 'Review list',
+      onAction: () => navigation.navigate('Tasks'),
     });
   }
   const open = cards.length + lists.length;
@@ -141,6 +155,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
             <Button label={row.action} kind="outline" compact onPress={row.onAction} />
           </Pressable>
         ))}
+
       </ScrollView>
     </SafeAreaView>
   );

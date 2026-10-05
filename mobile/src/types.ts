@@ -9,8 +9,12 @@ export type Category =
   | 'Cooking Essentials'
   | 'Snacks'
   | 'Beverages'
+  | 'Detergents'
+  | 'Cleaning'
   | 'Household'
-  | 'Personal Care';
+  | 'Personal Care'
+  /** Not in the catalog and Mom hasn't said where it goes yet. Never a silent guess. */
+  | 'Other';
 
 export type InventoryState = 'available' | 'running_low' | 'almost_finished' | 'out';
 export type Confidence = 'high' | 'medium' | 'low';
@@ -35,6 +39,8 @@ export interface ProductAlias {
   alias: string;
   productId: string;
   disambiguationGroup?: string;
+  /** A brand name used as the item name ("surf excel" → detergent, brand Surf Excel). */
+  brand?: string;
 }
 
 /**
@@ -144,7 +150,9 @@ export interface Clarification {
   kind:
     | 'product_type' | 'quantity' | 'brand' | 'package_size' | 'usual_unresolved' | 'product_identity' | 'save_pref'
     /** "Add rice to the list?" after the user said it's almost finished / out (plan_06). */
-    | 'restock';
+    | 'restock'
+    /** "Where does Harpic go?" — an item the catalog doesn't know. The answer teaches the catalog. */
+    | 'category';
   question: string;
   options: string[];
   productId?: string;
@@ -200,6 +208,10 @@ export interface HouseholdState {
   history: Purchase[];
   pendingClarifications: Clarification[];
   turns: Turn[];
+  /** Products Mom moved to another category: productId → her category. Survives catalog reloads. */
+  categoryOverrides: Record<string, Category>;
+  /** Bumped when the seed catalog changes; older saved state gets the new products merged in. */
+  catalogVersion: number;
 }
 
 export interface Turn {

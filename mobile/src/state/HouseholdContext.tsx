@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
-import type { AIResponse, ChatContext, HouseholdState, InventoryUpdate, ProposedItem } from '../types';
+import type { AIResponse, Category, ChatContext, HouseholdState, InventoryUpdate, ProposedItem } from '../types';
 import { initialHouseholdState } from '../data/seed';
 import { loadPersisted, savePersisted, clearPersisted } from './persistence';
-import { buildChatContext as buildContextFor, reducer, uid } from './reducer';
+import { buildChatContext as buildContextFor, reducer, uid, type ManualItem } from './reducer';
 import type { UsualFields } from './memory';
 import { useProfile } from './ProfileContext';
 
@@ -22,6 +22,8 @@ interface Ctx {
   acceptRestock: (proposal: ProposedItem) => void;
   dismissRestock: (productId: string) => void;
   dismissPrediction: (productId: string) => void;
+  setProductCategory: (productId: string, category: Category) => void;
+  addItem: (item: ManualItem) => void;
   reset: () => Promise<void>;
   buildChatContext: () => ChatContext;
 }
@@ -71,6 +73,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const acceptRestock = useCallback((proposal: ProposedItem) => dispatch({ type: 'ACCEPT_RESTOCK', proposal, by: by.current }), []);
   const dismissRestock = useCallback((productId: string) => dispatch({ type: 'DISMISS_RESTOCK', productId }), []);
   const dismissPrediction = useCallback((productId: string) => dispatch({ type: 'DISMISS_PREDICTION', productId }), []);
+  const setProductCategory = useCallback(
+    (productId: string, category: Category) => dispatch({ type: 'SET_PRODUCT_CATEGORY', productId, category }),
+    [],
+  );
+  const addItem = useCallback((item: ManualItem) => dispatch({ type: 'ADD_ITEM', item, by: by.current }), []);
   const reset = useCallback(async () => {
     await clearPersisted();
     dispatch({ type: 'RESET' });
@@ -81,10 +88,10 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(() => ({
     state, hydrated, addUserTurn, addAgentTurn, applyAI,
     markPurchased, removeItem, setInventory, saveAsUsual,
-    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, dismissPrediction, reset, buildChatContext,
+    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, dismissPrediction, setProductCategory, addItem, reset, buildChatContext,
   }), [
     state, hydrated, addUserTurn, addAgentTurn, applyAI, markPurchased, removeItem, setInventory, saveAsUsual,
-    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, dismissPrediction, reset, buildChatContext,
+    forgetPreference, forgetAliasPreference, approveList, acceptRestock, dismissRestock, dismissPrediction, setProductCategory, addItem, reset, buildChatContext,
   ]);
 
   return <HouseholdCtx.Provider value={value}>{children}</HouseholdCtx.Provider>;

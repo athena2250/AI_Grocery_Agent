@@ -252,6 +252,144 @@
    "name": "Coffee",
    "category": "Beverages",
    "default_unit": "g"
+  },
+  {
+   "id": "p_detergent_powder",
+   "name": "Detergent powder",
+   "category": "Detergents",
+   "default_unit": "kg"
+  },
+  {
+   "id": "p_detergent_liquid",
+   "name": "Detergent liquid",
+   "category": "Detergents",
+   "default_unit": "L"
+  },
+  {
+   "id": "p_detergent_bar",
+   "name": "Detergent bar",
+   "category": "Detergents",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_fabric_conditioner",
+   "name": "Fabric conditioner",
+   "category": "Detergents",
+   "default_unit": "L"
+  },
+  {
+   "id": "p_dishwash_liquid",
+   "name": "Dishwash liquid",
+   "category": "Cleaning",
+   "default_unit": "L"
+  },
+  {
+   "id": "p_dishwash_bar",
+   "name": "Dishwash bar",
+   "category": "Cleaning",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_floor_cleaner",
+   "name": "Floor cleaner",
+   "category": "Cleaning",
+   "default_unit": "L"
+  },
+  {
+   "id": "p_toilet_cleaner",
+   "name": "Toilet cleaner",
+   "category": "Cleaning",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_glass_cleaner",
+   "name": "Glass cleaner",
+   "category": "Cleaning",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_scrub_pad",
+   "name": "Scrub pad",
+   "category": "Cleaning",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_garbage_bags",
+   "name": "Garbage bags",
+   "category": "Household",
+   "default_unit": "pack"
+  },
+  {
+   "id": "p_mosquito_repellent",
+   "name": "Mosquito repellent",
+   "category": "Household",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_matchbox",
+   "name": "Matchbox",
+   "category": "Household",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_agarbatti",
+   "name": "Agarbatti",
+   "category": "Household",
+   "default_unit": "pack"
+  },
+  {
+   "id": "p_tissues",
+   "name": "Tissues",
+   "category": "Household",
+   "default_unit": "pack"
+  },
+  {
+   "id": "p_aluminium_foil",
+   "name": "Aluminium foil",
+   "category": "Household",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_bath_soap",
+   "name": "Bath soap",
+   "category": "Personal Care",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_handwash",
+   "name": "Handwash",
+   "category": "Personal Care",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_shampoo",
+   "name": "Shampoo",
+   "category": "Personal Care",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_toothpaste",
+   "name": "Toothpaste",
+   "category": "Personal Care",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_toothbrush",
+   "name": "Toothbrush",
+   "category": "Personal Care",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_hair_oil",
+   "name": "Hair oil",
+   "category": "Personal Care",
+   "default_unit": "pcs"
+  },
+  {
+   "id": "p_sanitary_pads",
+   "name": "Sanitary pads",
+   "category": "Personal Care",
+   "default_unit": "pack"
   }
  ],
  "aliases": [
@@ -651,6 +789,397 @@
   {
    "alias": "ravva",
    "product_id": "p_sooji"
+  },
+  {
+   "alias": "detergent",
+   "product_id": "p_detergent_powder",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "detergent",
+   "product_id": "p_detergent_liquid",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "detergent",
+   "product_id": "p_detergent_bar",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "surf",
+   "product_id": "p_detergent_powder",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "surf",
+   "product_id": "p_detergent_liquid",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "surf",
+   "product_id": "p_detergent_bar",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "detergent powder",
+   "product_id": "p_detergent_powder"
+  },
+  {
+   "alias": "washing powder",
+   "product_id": "p_detergent_powder"
+  },
+  {
+   "alias": "detergent liquid",
+   "product_id": "p_detergent_liquid"
+  },
+  {
+   "alias": "liquid detergent",
+   "product_id": "p_detergent_liquid"
+  },
+  {
+   "alias": "detergent bar",
+   "product_id": "p_detergent_bar"
+  },
+  {
+   "alias": "washing soap",
+   "product_id": "p_detergent_bar"
+  },
+  {
+   "alias": "fabric conditioner",
+   "product_id": "p_fabric_conditioner"
+  },
+  {
+   "alias": "surf excel",
+   "product_id": "p_detergent_powder",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "surf excel",
+   "product_id": "p_detergent_liquid",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "surf excel",
+   "product_id": "p_detergent_bar",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "ariel",
+   "product_id": "p_detergent_powder",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "ariel",
+   "product_id": "p_detergent_liquid",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "tide",
+   "product_id": "p_detergent_powder"
+  },
+  {
+   "alias": "rin",
+   "product_id": "p_detergent_powder",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "rin",
+   "product_id": "p_detergent_bar",
+   "disambiguation_group": "detergent"
+  },
+  {
+   "alias": "nirma",
+   "product_id": "p_detergent_powder"
+  },
+  {
+   "alias": "comfort",
+   "product_id": "p_fabric_conditioner"
+  },
+  {
+   "alias": "dishwash",
+   "product_id": "p_dishwash_liquid",
+   "disambiguation_group": "dishwash"
+  },
+  {
+   "alias": "dishwash",
+   "product_id": "p_dishwash_bar",
+   "disambiguation_group": "dishwash"
+  },
+  {
+   "alias": "dish wash",
+   "product_id": "p_dishwash_liquid",
+   "disambiguation_group": "dishwash"
+  },
+  {
+   "alias": "dish wash",
+   "product_id": "p_dishwash_bar",
+   "disambiguation_group": "dishwash"
+  },
+  {
+   "alias": "dishwash liquid",
+   "product_id": "p_dishwash_liquid"
+  },
+  {
+   "alias": "dish soap",
+   "product_id": "p_dishwash_liquid"
+  },
+  {
+   "alias": "dishwash bar",
+   "product_id": "p_dishwash_bar"
+  },
+  {
+   "alias": "vim",
+   "product_id": "p_dishwash_liquid",
+   "disambiguation_group": "dishwash"
+  },
+  {
+   "alias": "vim",
+   "product_id": "p_dishwash_bar",
+   "disambiguation_group": "dishwash"
+  },
+  {
+   "alias": "pril",
+   "product_id": "p_dishwash_liquid"
+  },
+  {
+   "alias": "exo",
+   "product_id": "p_dishwash_bar"
+  },
+  {
+   "alias": "floor cleaner",
+   "product_id": "p_floor_cleaner"
+  },
+  {
+   "alias": "phenyl",
+   "product_id": "p_floor_cleaner"
+  },
+  {
+   "alias": "lizol",
+   "product_id": "p_floor_cleaner"
+  },
+  {
+   "alias": "toilet cleaner",
+   "product_id": "p_toilet_cleaner"
+  },
+  {
+   "alias": "harpic",
+   "product_id": "p_toilet_cleaner"
+  },
+  {
+   "alias": "glass cleaner",
+   "product_id": "p_glass_cleaner"
+  },
+  {
+   "alias": "colin",
+   "product_id": "p_glass_cleaner"
+  },
+  {
+   "alias": "scrub pad",
+   "product_id": "p_scrub_pad"
+  },
+  {
+   "alias": "scrubber",
+   "product_id": "p_scrub_pad"
+  },
+  {
+   "alias": "scotch brite",
+   "product_id": "p_scrub_pad"
+  },
+  {
+   "alias": "garbage bags",
+   "product_id": "p_garbage_bags"
+  },
+  {
+   "alias": "garbage bag",
+   "product_id": "p_garbage_bags"
+  },
+  {
+   "alias": "dustbin bags",
+   "product_id": "p_garbage_bags"
+  },
+  {
+   "alias": "mosquito repellent",
+   "product_id": "p_mosquito_repellent"
+  },
+  {
+   "alias": "mosquito coil",
+   "product_id": "p_mosquito_repellent"
+  },
+  {
+   "alias": "good knight",
+   "product_id": "p_mosquito_repellent"
+  },
+  {
+   "alias": "matchbox",
+   "product_id": "p_matchbox"
+  },
+  {
+   "alias": "match box",
+   "product_id": "p_matchbox"
+  },
+  {
+   "alias": "matches",
+   "product_id": "p_matchbox"
+  },
+  {
+   "alias": "agarbatti",
+   "product_id": "p_agarbatti"
+  },
+  {
+   "alias": "incense sticks",
+   "product_id": "p_agarbatti"
+  },
+  {
+   "alias": "tissues",
+   "product_id": "p_tissues"
+  },
+  {
+   "alias": "tissue",
+   "product_id": "p_tissues"
+  },
+  {
+   "alias": "tissue paper",
+   "product_id": "p_tissues"
+  },
+  {
+   "alias": "aluminium foil",
+   "product_id": "p_aluminium_foil"
+  },
+  {
+   "alias": "foil",
+   "product_id": "p_aluminium_foil"
+  },
+  {
+   "alias": "soap",
+   "product_id": "p_bath_soap",
+   "disambiguation_group": "soap"
+  },
+  {
+   "alias": "soap",
+   "product_id": "p_handwash",
+   "disambiguation_group": "soap"
+  },
+  {
+   "alias": "sabun",
+   "product_id": "p_bath_soap",
+   "disambiguation_group": "soap"
+  },
+  {
+   "alias": "sabun",
+   "product_id": "p_handwash",
+   "disambiguation_group": "soap"
+  },
+  {
+   "alias": "bath soap",
+   "product_id": "p_bath_soap"
+  },
+  {
+   "alias": "handwash",
+   "product_id": "p_handwash"
+  },
+  {
+   "alias": "hand wash",
+   "product_id": "p_handwash"
+  },
+  {
+   "alias": "dettol",
+   "product_id": "p_bath_soap",
+   "disambiguation_group": "soap"
+  },
+  {
+   "alias": "dettol",
+   "product_id": "p_handwash",
+   "disambiguation_group": "soap"
+  },
+  {
+   "alias": "lifebuoy",
+   "product_id": "p_bath_soap",
+   "disambiguation_group": "soap"
+  },
+  {
+   "alias": "lifebuoy",
+   "product_id": "p_handwash",
+   "disambiguation_group": "soap"
+  },
+  {
+   "alias": "lux",
+   "product_id": "p_bath_soap"
+  },
+  {
+   "alias": "santoor",
+   "product_id": "p_bath_soap"
+  },
+  {
+   "alias": "medimix",
+   "product_id": "p_bath_soap"
+  },
+  {
+   "alias": "shampoo",
+   "product_id": "p_shampoo"
+  },
+  {
+   "alias": "clinic plus",
+   "product_id": "p_shampoo"
+  },
+  {
+   "alias": "sunsilk",
+   "product_id": "p_shampoo"
+  },
+  {
+   "alias": "head and shoulders",
+   "product_id": "p_shampoo"
+  },
+  {
+   "alias": "toothpaste",
+   "product_id": "p_toothpaste"
+  },
+  {
+   "alias": "tooth paste",
+   "product_id": "p_toothpaste"
+  },
+  {
+   "alias": "colgate",
+   "product_id": "p_toothpaste"
+  },
+  {
+   "alias": "pepsodent",
+   "product_id": "p_toothpaste"
+  },
+  {
+   "alias": "closeup",
+   "product_id": "p_toothpaste"
+  },
+  {
+   "alias": "toothbrush",
+   "product_id": "p_toothbrush"
+  },
+  {
+   "alias": "tooth brush",
+   "product_id": "p_toothbrush"
+  },
+  {
+   "alias": "hair oil",
+   "product_id": "p_hair_oil"
+  },
+  {
+   "alias": "parachute",
+   "product_id": "p_hair_oil"
+  },
+  {
+   "alias": "sanitary pads",
+   "product_id": "p_sanitary_pads"
+  },
+  {
+   "alias": "pads",
+   "product_id": "p_sanitary_pads"
+  },
+  {
+   "alias": "whisper",
+   "product_id": "p_sanitary_pads"
+  },
+  {
+   "alias": "stayfree",
+   "product_id": "p_sanitary_pads"
   }
  ],
  "preferences": [

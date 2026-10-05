@@ -5,6 +5,7 @@ import { theme } from '../theme';
 import { Button, Dot, Sheet } from './hearth';
 import { AddSheet } from '../screens/AddSheet';
 import { ComposeSheet } from '../screens/ComposeSheet';
+import { AddItemSheet } from '../screens/AddItemSheet';
 
 /**
  * App-wide UI: the toast, a choice sheet (replaces Alert.alert — styled, and
@@ -27,6 +28,8 @@ interface Ctx {
   ask: (a: AskArgs) => void;
   openAdd: () => void;
   openCompose: (seed?: string) => void;
+  /** "Add groceries": one item, identified from the catalog, then its details. */
+  openAddItem: (seed?: string) => void;
 }
 
 const UICtx = createContext<Ctx | null>(null);
@@ -37,7 +40,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   const [anim] = useState(() => new Animated.Value(0));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [asking, setAsking] = useState<AskArgs | null>(null);
-  const [sheet, setSheet] = useState<'add' | 'compose' | null>(null);
+  const [sheet, setSheet] = useState<'add' | 'compose' | 'item' | null>(null);
   const [seed, setSeed] = useState('');
   const sheetRef = useRef(sheet);
   useEffect(() => { sheetRef.current = sheet; }, [sheet]);
@@ -55,26 +58,29 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
 
   const ask = useCallback((a: AskArgs) => setAsking(a), []);
   const openAdd = useCallback(() => setSheet('add'), []);
-  const openCompose = useCallback((s?: string) => {
+  const switchTo = useCallback((next: 'compose' | 'item', s?: string) => {
     setSeed(s ?? '');
-    // iOS drops a modal presented while another is still dismissing — let the add sheet go first.
-    if (sheetRef.current === 'add') {
+    // iOS drops a modal presented while another is still dismissing — let the open sheet go first.
+    if (sheetRef.current && sheetRef.current !== next) {
       setSheet(null);
-      setTimeout(() => setSheet('compose'), 350);
+      setTimeout(() => setSheet(next), 350);
     } else {
-      setSheet('compose');
+      setSheet(next);
     }
   }, []);
+  const openCompose = useCallback((s?: string) => switchTo('compose', s), [switchTo]);
+  const openAddItem = useCallback((s?: string) => switchTo('item', s), [switchTo]);
   const close = useCallback(() => setSheet(null), []);
 
-  const value = useMemo(() => ({ flash, ask, openAdd, openCompose }), [flash, ask, openAdd, openCompose]);
+  const value = useMemo(() => ({ flash, ask, openAdd, openCompose, openAddItem }), [flash, ask, openAdd, openCompose, openAddItem]);
 
   return (
     <UICtx.Provider value={value}>
       {children}
 
-      <AddSheet visible={sheet === 'add'} onClose={close} onCompose={openCompose} />
+      <AddSheet visible={sheet === 'add'} onClose={close} onCompose={openCompose} onAddItem={openAddItem} />
       {sheet === 'compose' && <ComposeSheet seed={seed} onClose={close} />}
+      {sheet === 'item' && <AddItemSheet seed={seed} onClose={close} />}
 
       <Sheet visible={!!asking} onClose={() => setAsking(null)} title={asking?.title} sub={asking?.body}>
         <View style={{ gap: 10, marginTop: 6 }}>

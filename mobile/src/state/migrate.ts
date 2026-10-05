@@ -1,5 +1,5 @@
-import type { Category, HouseholdState, InventoryEntry, ItemStatus, ListItem, Preference, Product } from '../types';
-import { initialHouseholdState, seedProducts } from '../data/seed';
+import type { Category, HouseholdState, InventoryEntry, ItemStatus, ListItem, Preference, Product, ProductAlias } from '../types';
+import { CATALOG_VERSION, initialHouseholdState, seedAliases, seedProducts } from '../data/seed';
 import { START_CONFIDENCE } from './memory';
 import { categorize } from './planner';
 
@@ -40,12 +40,28 @@ const LEGACY_CATEGORY: Record<string, Category> = {
   'Pulses & Dal': 'Pulses',
   Oils: 'Cooking Essentials',
   Bakery: 'Dairy',
-  Other: 'Household',
 };
 
-function migrateProduct(p: Product): Product {
+/** Mom's own move wins over the seed; otherwise seed products take the seed's category. */
+function migrateProduct(p: Product, overrides: Record<string, Category>): Product {
   const seeded = seedProducts.find((s) => s.id === p.id);
-  return { ...p, category: seeded?.category ?? LEGACY_CATEGORY[p.category] ?? p.category };
+  return { ...p, category: overrides[p.id] ?? seeded?.category ?? LEGACY_CATEGORY[p.category] ?? p.category };
+}
+
+const aliasKey = (a: ProductAlias) => `${a.alias}|${a.productId}`;
+
+/**
+ * Seed catalog + what this household taught it. Seed rows come from the current
+ * seed (so new products and brand names reach phones with saved state); products
+ * and aliases learned from "Where does … go?" are kept.
+ */
+function mergeCatalog(raw: Partial<HouseholdState>, overrides: Record<string, Category>) {
+  const seedIds = new Set(seedProducts.map((p) => p.id));
+  const learned = (raw.products ?? []).filter((p) => !seedIds.has(p.id));
+  const products = [...seedProducts, ...learned].map((p) => migrateProduct(p, overrides));
+  const seedKeys = new Set(seedAliases.map(aliasKey));
+  const aliases = [...seedAliases, ...(raw.aliases ?? []).filter((a) => !seedKeys.has(aliasKey(a)))];
+  return { products, aliases };
 }
 
 /** Pre-plan_08 list rows had `purchased: boolean` and were hard-deleted on remove. */
@@ -64,12 +80,21 @@ function migrateListItem(li: LegacyListItem, products: Product[]): ListItem {
 export function migrateState(
   raw: Partial<HouseholdState> & { preferences?: (Preference | LegacyPreference)[]; listItems?: LegacyListItem[] },
 ): HouseholdState {
-  const products = (raw.products ?? initialHouseholdState.products).map(migrateProduct);
+  const categoryOverrides = raw.categoryOverrides ?? {};
+  const { products, aliases } = mergeCatalog(raw, categoryOverrides);
+  // Catalog v2 (2026-10-05) started the grocery list over, as asked: list, chat and open questions are
+  // cleared once. Memory, pantry and history are kept.
+  const fresh = (raw.catalogVersion ?? 1) < 2;
   return {
     ...(raw as HouseholdState),
     products,
-    list: raw.list ?? { id: 'list_1', status: 'draft', createdAt: new Date().toISOString() },
-    listItems: (raw.listItems ?? []).map((li) => migrateListItem(li, products)),
+    aliases,
+    categoryOverrides,
+    catalogVersion: CATALOG_VERSION,
+    list: !fresh && raw.list ? raw.list : { id: 'list_1', status: 'draft', createdAt: new Date().toISOString() },
+    listItems: fresh ? [] : (raw.listItems ?? []).map((li) => migrateListItem(li, products)),
+    pendingClarifications: fresh ? [] : raw.pendingClarifications ?? [],
+    turns: fresh ? initialHouseholdState.turns : raw.turns ?? initialHouseholdState.turns,
     dismissedRestocks: raw.dismissedRestocks ?? {},
     dismissedPredictions: raw.dismissedPredictions ?? {},
     preferences: (raw.preferences ?? []).map(migratePreference),

@@ -19,7 +19,7 @@ const f = theme.font;
 /** Groceries tab: the draft/approved list by store aisle, plus restock and predicted suggestions. */
 export function ListScreen() {
   const { state, markPurchased, approveList, dismissRestock, dismissPrediction } = useHousehold();
-  const { ask, flash, openCompose } = useUI();
+  const { ask, flash, openAddItem } = useUI();
   const addProposal = useAddProposal();
   const [selected, setSelected] = useState<ListItem | null>(null);
   const [suggestedOpen, setSuggestedOpen] = useState(false);
@@ -98,9 +98,9 @@ export function ListScreen() {
             <EmptyState
               icon={<CartIcon size={40} color="#C0B6A3" strokeWidth={1.3} />}
               title="Your list is empty"
-              body="Add groceries by typing or speaking — they sort neatly into aisles."
+              body="Add an item — Hearth works out what it is and files it in the right aisle."
               cta="Add groceries"
-              onCta={() => openCompose('')}
+              onCta={() => openAddItem()}
             />
           </View>
         ) : sections.map((section) => (
@@ -120,6 +120,10 @@ export function ListScreen() {
             ))}
           </View>
         ))}
+
+        {sections.length > 0 && (
+          <Button label="+  Add item" kind="accentOutline" onPress={() => openAddItem()} style={{ marginTop: 28 }} />
+        )}
       </ScrollView>
 
       <ItemDetailModal item={selected} onClose={() => setSelected(null)} onSaved={(m) => flash(m, c.accent)} />

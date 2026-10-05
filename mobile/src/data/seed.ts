@@ -68,6 +68,140 @@ export const seedProducts: Product[] = [
   // Beverages
   { id: 'p_tea', name: 'Tea', category: 'Beverages', defaultUnit: 'g' },
   { id: 'p_coffee', name: 'Coffee', category: 'Beverages', defaultUnit: 'g' },
+
+  // Detergents
+  { id: 'p_detergent_powder', name: 'Detergent powder', category: 'Detergents', defaultUnit: 'kg' },
+  { id: 'p_detergent_liquid', name: 'Detergent liquid', category: 'Detergents', defaultUnit: 'L' },
+  { id: 'p_detergent_bar', name: 'Detergent bar', category: 'Detergents', defaultUnit: 'pcs' },
+  { id: 'p_fabric_conditioner', name: 'Fabric conditioner', category: 'Detergents', defaultUnit: 'L' },
+
+  // Cleaning
+  { id: 'p_dishwash_liquid', name: 'Dishwash liquid', category: 'Cleaning', defaultUnit: 'L' },
+  { id: 'p_dishwash_bar', name: 'Dishwash bar', category: 'Cleaning', defaultUnit: 'pcs' },
+  { id: 'p_floor_cleaner', name: 'Floor cleaner', category: 'Cleaning', defaultUnit: 'L' },
+  { id: 'p_toilet_cleaner', name: 'Toilet cleaner', category: 'Cleaning', defaultUnit: 'pcs' },
+  { id: 'p_glass_cleaner', name: 'Glass cleaner', category: 'Cleaning', defaultUnit: 'pcs' },
+  { id: 'p_scrub_pad', name: 'Scrub pad', category: 'Cleaning', defaultUnit: 'pcs' },
+
+  // Household
+  { id: 'p_garbage_bags', name: 'Garbage bags', category: 'Household', defaultUnit: 'pack' },
+  { id: 'p_mosquito_repellent', name: 'Mosquito repellent', category: 'Household', defaultUnit: 'pcs' },
+  { id: 'p_matchbox', name: 'Matchbox', category: 'Household', defaultUnit: 'pcs' },
+  { id: 'p_agarbatti', name: 'Agarbatti', category: 'Household', defaultUnit: 'pack' },
+  { id: 'p_tissues', name: 'Tissues', category: 'Household', defaultUnit: 'pack' },
+  { id: 'p_aluminium_foil', name: 'Aluminium foil', category: 'Household', defaultUnit: 'pcs' },
+
+  // Personal Care
+  { id: 'p_bath_soap', name: 'Bath soap', category: 'Personal Care', defaultUnit: 'pcs' },
+  { id: 'p_handwash', name: 'Handwash', category: 'Personal Care', defaultUnit: 'pcs' },
+  { id: 'p_shampoo', name: 'Shampoo', category: 'Personal Care', defaultUnit: 'pcs' },
+  { id: 'p_toothpaste', name: 'Toothpaste', category: 'Personal Care', defaultUnit: 'pcs' },
+  { id: 'p_toothbrush', name: 'Toothbrush', category: 'Personal Care', defaultUnit: 'pcs' },
+  { id: 'p_hair_oil', name: 'Hair oil', category: 'Personal Care', defaultUnit: 'pcs' },
+  { id: 'p_sanitary_pads', name: 'Sanitary pads', category: 'Personal Care', defaultUnit: 'pack' },
+];
+
+/** Bumped when the catalog changes, so saved state on the phone picks up new products (state/migrate.ts). */
+export const CATALOG_VERSION = 2;
+
+/** Household + personal care: generic names, then brands Mom says instead of the product ("get surf excel", "vim is over"). */
+const homeCareAliases: ProductAlias[] = [
+  // "detergent" / "surf" alone say neither the kind nor the brand — ask the kind, leave the brand empty.
+  { alias: 'detergent', productId: 'p_detergent_powder', disambiguationGroup: 'detergent' },
+  { alias: 'detergent', productId: 'p_detergent_liquid', disambiguationGroup: 'detergent' },
+  { alias: 'detergent', productId: 'p_detergent_bar', disambiguationGroup: 'detergent' },
+  { alias: 'surf', productId: 'p_detergent_powder', disambiguationGroup: 'detergent' },
+  { alias: 'surf', productId: 'p_detergent_liquid', disambiguationGroup: 'detergent' },
+  { alias: 'surf', productId: 'p_detergent_bar', disambiguationGroup: 'detergent' },
+  { alias: 'detergent powder', productId: 'p_detergent_powder' },
+  { alias: 'washing powder', productId: 'p_detergent_powder' },
+  { alias: 'detergent liquid', productId: 'p_detergent_liquid' },
+  { alias: 'liquid detergent', productId: 'p_detergent_liquid' },
+  { alias: 'detergent bar', productId: 'p_detergent_bar' },
+  { alias: 'washing soap', productId: 'p_detergent_bar' },
+  { alias: 'fabric conditioner', productId: 'p_fabric_conditioner' },
+  { alias: 'surf excel', productId: 'p_detergent_powder', disambiguationGroup: 'detergent', brand: 'Surf Excel' },
+  { alias: 'surf excel', productId: 'p_detergent_liquid', disambiguationGroup: 'detergent', brand: 'Surf Excel' },
+  { alias: 'surf excel', productId: 'p_detergent_bar', disambiguationGroup: 'detergent', brand: 'Surf Excel' },
+  { alias: 'ariel', productId: 'p_detergent_powder', disambiguationGroup: 'detergent', brand: 'Ariel' },
+  { alias: 'ariel', productId: 'p_detergent_liquid', disambiguationGroup: 'detergent', brand: 'Ariel' },
+  { alias: 'tide', productId: 'p_detergent_powder', brand: 'Tide' },
+  { alias: 'rin', productId: 'p_detergent_powder', disambiguationGroup: 'detergent', brand: 'Rin' },
+  { alias: 'rin', productId: 'p_detergent_bar', disambiguationGroup: 'detergent', brand: 'Rin' },
+  { alias: 'nirma', productId: 'p_detergent_powder', brand: 'Nirma' },
+  { alias: 'comfort', productId: 'p_fabric_conditioner', brand: 'Comfort' },
+
+  { alias: 'dishwash', productId: 'p_dishwash_liquid', disambiguationGroup: 'dishwash' },
+  { alias: 'dishwash', productId: 'p_dishwash_bar', disambiguationGroup: 'dishwash' },
+  { alias: 'dish wash', productId: 'p_dishwash_liquid', disambiguationGroup: 'dishwash' },
+  { alias: 'dish wash', productId: 'p_dishwash_bar', disambiguationGroup: 'dishwash' },
+  { alias: 'dishwash liquid', productId: 'p_dishwash_liquid' },
+  { alias: 'dish soap', productId: 'p_dishwash_liquid' },
+  { alias: 'dishwash bar', productId: 'p_dishwash_bar' },
+  { alias: 'vim', productId: 'p_dishwash_liquid', disambiguationGroup: 'dishwash', brand: 'Vim' },
+  { alias: 'vim', productId: 'p_dishwash_bar', disambiguationGroup: 'dishwash', brand: 'Vim' },
+  { alias: 'pril', productId: 'p_dishwash_liquid', brand: 'Pril' },
+  { alias: 'exo', productId: 'p_dishwash_bar', brand: 'Exo' },
+  { alias: 'floor cleaner', productId: 'p_floor_cleaner' },
+  { alias: 'phenyl', productId: 'p_floor_cleaner' },
+  { alias: 'lizol', productId: 'p_floor_cleaner', brand: 'Lizol' },
+  { alias: 'toilet cleaner', productId: 'p_toilet_cleaner' },
+  { alias: 'harpic', productId: 'p_toilet_cleaner', brand: 'Harpic' },
+  { alias: 'glass cleaner', productId: 'p_glass_cleaner' },
+  { alias: 'colin', productId: 'p_glass_cleaner', brand: 'Colin' },
+  { alias: 'scrub pad', productId: 'p_scrub_pad' },
+  { alias: 'scrubber', productId: 'p_scrub_pad' },
+  { alias: 'scotch brite', productId: 'p_scrub_pad', brand: 'Scotch-Brite' },
+
+  { alias: 'garbage bags', productId: 'p_garbage_bags' },
+  { alias: 'garbage bag', productId: 'p_garbage_bags' },
+  { alias: 'dustbin bags', productId: 'p_garbage_bags' },
+  { alias: 'mosquito repellent', productId: 'p_mosquito_repellent' },
+  { alias: 'mosquito coil', productId: 'p_mosquito_repellent' },
+  { alias: 'good knight', productId: 'p_mosquito_repellent', brand: 'Good Knight' },
+  { alias: 'matchbox', productId: 'p_matchbox' },
+  { alias: 'match box', productId: 'p_matchbox' },
+  { alias: 'matches', productId: 'p_matchbox' },
+  { alias: 'agarbatti', productId: 'p_agarbatti' },
+  { alias: 'incense sticks', productId: 'p_agarbatti' },
+  { alias: 'tissues', productId: 'p_tissues' },
+  { alias: 'tissue', productId: 'p_tissues' },
+  { alias: 'tissue paper', productId: 'p_tissues' },
+  { alias: 'aluminium foil', productId: 'p_aluminium_foil' },
+  { alias: 'foil', productId: 'p_aluminium_foil' },
+
+  // "soap" in Mom-speak is bath soap or handwash — ask. Dishwash says so ("dish soap", "vim").
+  { alias: 'soap', productId: 'p_bath_soap', disambiguationGroup: 'soap' },
+  { alias: 'soap', productId: 'p_handwash', disambiguationGroup: 'soap' },
+  { alias: 'sabun', productId: 'p_bath_soap', disambiguationGroup: 'soap' },
+  { alias: 'sabun', productId: 'p_handwash', disambiguationGroup: 'soap' },
+  { alias: 'bath soap', productId: 'p_bath_soap' },
+  { alias: 'handwash', productId: 'p_handwash' },
+  { alias: 'hand wash', productId: 'p_handwash' },
+  { alias: 'dettol', productId: 'p_bath_soap', disambiguationGroup: 'soap', brand: 'Dettol' },
+  { alias: 'dettol', productId: 'p_handwash', disambiguationGroup: 'soap', brand: 'Dettol' },
+  { alias: 'lifebuoy', productId: 'p_bath_soap', disambiguationGroup: 'soap', brand: 'Lifebuoy' },
+  { alias: 'lifebuoy', productId: 'p_handwash', disambiguationGroup: 'soap', brand: 'Lifebuoy' },
+  { alias: 'lux', productId: 'p_bath_soap', brand: 'Lux' },
+  { alias: 'santoor', productId: 'p_bath_soap', brand: 'Santoor' },
+  { alias: 'medimix', productId: 'p_bath_soap', brand: 'Medimix' },
+  { alias: 'shampoo', productId: 'p_shampoo' },
+  { alias: 'clinic plus', productId: 'p_shampoo', brand: 'Clinic Plus' },
+  { alias: 'sunsilk', productId: 'p_shampoo', brand: 'Sunsilk' },
+  { alias: 'head and shoulders', productId: 'p_shampoo', brand: 'Head & Shoulders' },
+  { alias: 'toothpaste', productId: 'p_toothpaste' },
+  { alias: 'tooth paste', productId: 'p_toothpaste' },
+  { alias: 'colgate', productId: 'p_toothpaste', brand: 'Colgate' },
+  { alias: 'pepsodent', productId: 'p_toothpaste', brand: 'Pepsodent' },
+  { alias: 'closeup', productId: 'p_toothpaste', brand: 'Closeup' },
+  { alias: 'toothbrush', productId: 'p_toothbrush' },
+  { alias: 'tooth brush', productId: 'p_toothbrush' },
+  { alias: 'hair oil', productId: 'p_hair_oil' },
+  { alias: 'parachute', productId: 'p_hair_oil', brand: 'Parachute' },
+  { alias: 'sanitary pads', productId: 'p_sanitary_pads' },
+  { alias: 'pads', productId: 'p_sanitary_pads' },
+  { alias: 'whisper', productId: 'p_sanitary_pads', brand: 'Whisper' },
+  { alias: 'stayfree', productId: 'p_sanitary_pads', brand: 'Stayfree' },
 ];
 
 export const seedAliases: ProductAlias[] = [
@@ -181,6 +315,7 @@ export const seedAliases: ProductAlias[] = [
   { alias: 'bangaladumpa', productId: 'p_potato' },
   { alias: 'atukulu', productId: 'p_poha' },
   { alias: 'ravva', productId: 'p_sooji' },
+  ...homeCareAliases,
 ];
 
 const today = new Date().toISOString();
@@ -256,6 +391,8 @@ export const initialHouseholdState: HouseholdState = {
   dismissedRestocks: {},
   dismissedPredictions: {},
   history: seedHistory,
+  categoryOverrides: {},
+  catalogVersion: CATALOG_VERSION,
   pendingClarifications: [],
   turns: [
     {

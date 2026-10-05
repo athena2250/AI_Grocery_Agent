@@ -34,8 +34,11 @@ export const CATEGORY_ORDER: Category[] = [
   'Cooking Essentials',
   'Snacks',
   'Beverages',
+  'Detergents',
+  'Cleaning',
   'Household',
   'Personal Care',
+  'Other',
 ];
 
 export const DEFAULT_RATIONALE = 'You added this in chat.';
