@@ -8,6 +8,7 @@ import {
 } from '@expo-google-fonts/ibm-plex-sans';
 import { HouseholdProvider, useHousehold } from './src/state/HouseholdContext';
 import { ProfileProvider, useProfile } from './src/state/ProfileContext';
+import { TasksProvider } from './src/state/TasksContext';
 import { UIProvider } from './src/components/UIProvider';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
@@ -30,10 +31,12 @@ export default function App() {
     <SafeAreaProvider style={{ backgroundColor: theme.colors.bg }}>
       <ProfileProvider>
         <HouseholdProvider>
-          <UIProvider>
-            {fontsLoaded ? <Gate /> : <View style={{ flex: 1, backgroundColor: theme.colors.bg }} />}
-            <StatusBar style="dark" />
-          </UIProvider>
+          <TasksProvider>
+            <UIProvider>
+              {fontsLoaded ? <Gate /> : <View style={{ flex: 1, backgroundColor: theme.colors.bg }} />}
+              <StatusBar style="dark" />
+            </UIProvider>
+          </TasksProvider>
         </HouseholdProvider>
       </ProfileProvider>
     </SafeAreaProvider>

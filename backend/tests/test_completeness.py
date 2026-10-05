@@ -31,14 +31,23 @@ COMPLETE = {
              "assigned_to": "m_dad"},
     "alert": {"message": "Call the plumber", "recipients": ["m_dad"], "repeat": True,
               "interval_minutes": 240},
+    "appointment": {"what": "Doctor appointment", "appointment_date": "2026-10-16",
+                    "appointment_time": "17:00"},
+    "errand": {"what": "Deposit cheque at bank", "assigned_to": "m_me", "needed_by": "2026-10-06"},
+    "shopping": {"item": "Pressure cooker", "assigned_to": "m_dad"},
+    "misc": {"what": "Call grandma"},
 }
 
 REQUIRED = {
-    "grocery": ["item", "qty", "unit", "expected_rate", "needed_by"],
+    "grocery": ["item", "qty", "unit", "needed_by"],
     "task": ["what", "assigned_to", "needed_by"],
     "ticket_booking": ["from", "to", "travel_date", "passengers", "assigned_to"],
     "bill": ["bill_type", "amount", "due_date", "assigned_to"],
     "alert": ["message", "recipients", "repeat", "interval_minutes"],
+    "appointment": ["what", "appointment_date", "appointment_time"],
+    "errand": ["what", "assigned_to", "needed_by"],
+    "shopping": ["item", "assigned_to"],
+    "misc": ["what"],
 }
 
 
@@ -73,10 +82,29 @@ def test_each_required_field_is_reported(session, kind, field):
 
 
 def test_grocery_item_question_names_the_item(session):
-    fields = {"needed_by": "tomorrow", "items": [{"item": "Tomatoes", "qty": 1, "unit": "kg"}]}
+    fields = {"needed_by": "tomorrow", "items": [{"item": "Tomatoes", "unit": "kg"}]}
     [m] = missing_fields(fields, requirements_for(session, "grocery"))
-    assert (m.field, m.item_index) == ("expected_rate", 0)
+    assert (m.field, m.item_index) == ("qty", 0)
     assert "Tomatoes" in m.question
+
+
+def test_expected_rate_is_never_asked(session):
+    """Filled from purchase history by app/feed/expected_rate.py, not asked of the author."""
+    fields = {"needed_by": "2026-10-06", "items": [{"item": "Tomatoes", "qty": 1, "unit": "kg"}]}
+    assert missing_fields(fields, requirements_for(session, "grocery")) == []
+
+
+def test_reseeding_brings_existing_kind_definitions_in_line(session):
+    from app.feed.models import PostKindField
+    from app.seed import seed
+
+    row = session.get(PostKindField, ("grocery", "expected_rate"))
+    row.required = True  # a DB seeded before 2026-10-05
+    session.add(row)
+    session.flush()
+    added = seed(session)
+    assert added["post_kind_field"] == 1
+    assert session.get(PostKindField, ("grocery", "expected_rate")).required is False
 
 
 def test_post_level_needed_by_covers_items_but_item_level_alone_does_too(session):

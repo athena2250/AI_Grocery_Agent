@@ -1,66 +1,150 @@
-import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import { theme } from '../theme';
-import { Dot, Kicker, Sheet } from '../components/hearth';
-import { MicIcon } from '../components/icons';
+import { Button, Chip, Dot, FieldRow, Kicker, Sheet } from '../components/hearth';
+import { useUI } from '../components/UIProvider';
+import { useProfile } from '../state/ProfileContext';
+import { useTasks } from '../state/TasksContext';
+import { SECTIONS, dueChoices, dueLabel, fillTask, withMissing, type Section, type TaskDraft } from '../state/tasks';
+
+const c = theme.colors;
 
 /**
- * The + sheet: "Type or speak" first, then a grid of starter phrases. Every
- * type here is something the sandbox AI understands today; bills, repairs and
- * plans arrive with the family feed.
+ * The + sheet: Add task · Add section · Additional information, then "Fill
+ * with Hearth AI". Groceries hand off to the grocery AI (ComposeSheet); every
+ * other section is filled by `fillTask`, which asks — as chips — for whoever
+ * does it and by when when the words don't say. Save stays off until it's complete.
  */
-const TYPES = [
-  { label: 'Groceries', seed: 'We need tomatoes and onions' },
-  { label: 'Running low', seed: 'rice is almost finished' },
-  { label: 'Ran out', seed: 'we are out of oil' },
-  { label: 'The usual', seed: 'the usual biscuits' },
-  { label: 'Bought it', seed: 'mark tomatoes purchased' },
-  { label: 'Your own', seed: '' },
-];
-
 export function AddSheet({ visible, onClose, onCompose }: {
   visible: boolean; onClose: () => void; onCompose: (seed?: string) => void;
 }) {
-  return (
-    <Sheet visible={visible} onClose={onClose} title="Add to your journal" sub="Describe it in your own words, or pick a type.">
-      <Pressable onPress={() => onCompose('')} style={({ pressed }) => [styles.primary, pressed && styles.pressed]}>
-        <MicIcon color={theme.colors.onDark} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.primaryTitle}>Type or speak</Text>
-          <Text style={styles.primaryHint}>“Get coriander”</Text>
-        </View>
-        <Text style={styles.chev}>›</Text>
-      </Pressable>
+  const { flash } = useUI();
+  const { me, activeMembers } = useProfile();
+  const { addTask } = useTasks();
+  const [title, setTitle] = useState('');
+  const [section, setSection] = useState<Section | null>(null);
+  const [info, setInfo] = useState('');
+  const [draft, setDraft] = useState<TaskDraft | null>(null);
 
-      <Kicker style={styles.kicker}>Or choose a type</Kicker>
-      <View style={styles.grid}>
-        {TYPES.map((t) => (
-          <Pressable key={t.label} onPress={() => onCompose(t.seed)} style={({ pressed }) => [styles.cell, pressed && styles.pressed]}>
-            <Dot color={theme.colors.accent} size={6} />
-            <Text style={styles.cellText}>{t.label}</Text>
-          </Pressable>
+  // Every way out starts the next + fresh.
+  const reset = () => { setTitle(''); setSection(null); setInfo(''); setDraft(null); };
+  const close = () => { reset(); onClose(); };
+  const compose = (seed: string) => { reset(); onCompose(seed); };
+
+  // Any edit to the form makes the filled-in draft stale.
+  const edit = <T,>(set: (v: T) => void) => (v: T) => { set(v); setDraft(null); };
+
+  const fill = () => {
+    if (section === 'Groceries') {
+      compose([title, info].map((s) => s.trim()).filter(Boolean).join(', '));
+      return;
+    }
+    const d = fillTask({ title, section, info }, activeMembers, me.id);
+    setDraft(d);
+    if (d.section && !section) setSection(d.section);
+  };
+
+  const answer = (patch: Partial<TaskDraft>) => setDraft((d) => (d ? withMissing({ ...d, ...patch }) : d));
+
+  const save = () => {
+    if (!draft || draft.missing.length || !draft.section || !draft.whoId || draft.due === undefined) return;
+    addTask({ title: draft.title, section: draft.section, notes: draft.notes, whoId: draft.whoId, due: draft.due });
+    close();
+    flash(`Added to ${draft.section}`);
+  };
+
+  const who = activeMembers.find((m) => m.id === draft?.whoId);
+  const canFill = !!(title.trim() || info.trim());
+
+  const footer = !draft ? (
+    <Button kind="accent" label="✦  Fill with Hearth AI" onPress={fill} disabled={!canFill} />
+  ) : (
+    <Button
+      kind="accent"
+      label={draft.missing.length ? `${draft.missing.length} more to answer` : 'Save task'}
+      onPress={save}
+      disabled={draft.missing.length > 0}
+    />
+  );
+
+  return (
+    <Sheet visible={visible} onClose={close} tall={!!draft} title="Add to your journal" footer={footer}>
+      <Kicker style={styles.kicker}>Add task</Kicker>
+      <TextInput
+        style={styles.input}
+        value={title}
+        onChangeText={edit(setTitle)}
+        placeholder="e.g. Kitchen tap is leaking"
+        placeholderTextColor={c.textFaint}
+      />
+
+      <Kicker style={styles.kicker}>Add section</Kicker>
+      <View style={styles.chips}>
+        {SECTIONS.map((s) => (
+          <Chip key={s} label={s} suggested={section === s} onPress={() => edit(setSection)(section === s ? null : s)} />
         ))}
       </View>
-      <Text style={styles.soon}>Bills, repairs and plans are coming with the family feed.</Text>
+
+      <Kicker style={styles.kicker}>Additional information</Kicker>
+      <TextInput
+        style={[styles.input, styles.multi]}
+        value={info}
+        onChangeText={edit(setInfo)}
+        multiline
+        placeholder="Who should do it, by when, anything else…"
+        placeholderTextColor={c.textFaint}
+      />
+
+      {draft ? (
+        <View style={{ marginTop: 22 }}>
+          <View style={styles.filled}>
+            <Dot color={draft.missing.length ? c.amber : c.green} />
+            <Text style={styles.filledText}>
+              {draft.missing.length ? 'Hearth filled what it could — a little more, please.' : 'Hearth filled this in — check it before saving.'}
+            </Text>
+          </View>
+
+          <FieldRow k="Task" v={draft.title || 'Add a task above'} />
+          <FieldRow k="Section" v={draft.section ? `${draft.section}${draft.sectionFromAI ? '  · from your words' : ''}` : 'Pick a section above'} />
+
+          <FieldRow k="Who does it" v={who?.name ?? 'Not said yet'} />
+          <View style={styles.chips}>
+            {activeMembers.map((m) => (
+              <Chip key={m.id} label={m.id === me.id ? `${m.name} (me)` : m.name} suggested={m.id === draft.whoId} onPress={() => answer({ whoId: m.id })} />
+            ))}
+          </View>
+
+          <FieldRow k="By when" v={draft.due === undefined ? 'Not said yet' : dueLabel(draft.due)} />
+          <View style={styles.chips}>
+            {dueChoices().map((o) => (
+              <Chip key={o.label} label={o.label} suggested={o.due === draft.due} quiet={o.due === null} onPress={() => answer({ due: o.due })} />
+            ))}
+          </View>
+
+          {draft.notes ? <FieldRow k="Notes" v={draft.notes} /> : null}
+        </View>
+      ) : (
+        <Pressable onPress={() => compose('')} style={styles.freeform}>
+          <Text style={styles.freeformText}>Or just type or speak it in your words ›</Text>
+        </Pressable>
+      )}
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  primary: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 16, paddingHorizontal: 18, backgroundColor: theme.colors.ink, borderRadius: theme.radius.lg,
+  kicker: { fontSize: 11, letterSpacing: 2, marginTop: 18, marginBottom: 10 },
+  input: {
+    borderWidth: 1, borderColor: c.border, borderRadius: 12, backgroundColor: c.paper,
+    paddingHorizontal: 14, paddingVertical: 12, fontFamily: theme.font.serif, fontSize: 18, color: c.ink,
   },
-  pressed: { transform: [{ scale: 0.985 }] },
-  primaryTitle: { fontFamily: theme.font.sansBold, fontSize: 16, color: theme.colors.onDark },
-  primaryHint: { fontFamily: theme.font.serifItalic, fontSize: 14, color: theme.colors.onDarkMuted, marginTop: 1 },
-  chev: { color: theme.colors.onDarkMuted, fontSize: 22 },
-  kicker: { fontSize: 11, letterSpacing: 2, marginTop: 22, marginBottom: 12 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  cell: {
-    flexBasis: '47%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 14, paddingHorizontal: 16, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md,
+  multi: { minHeight: 76, textAlignVertical: 'top' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap' },
+  filled: {
+    flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12, marginBottom: 4,
+    borderTopWidth: 1, borderTopColor: c.ink,
   },
-  cellText: { fontFamily: theme.font.sansMedium, fontSize: 15, color: theme.colors.ink },
-  soon: { fontFamily: theme.font.sans, fontSize: 13, color: theme.colors.textFaint, marginTop: 16, textAlign: 'center' },
+  filledText: { fontFamily: theme.font.sansMedium, fontSize: 14, color: c.textSoft, flex: 1 },
+  freeform: { paddingVertical: 16, marginTop: 8 },
+  freeformText: { fontFamily: theme.font.serifItalic, fontSize: 16, color: c.textSoft, textAlign: 'center' },
 });

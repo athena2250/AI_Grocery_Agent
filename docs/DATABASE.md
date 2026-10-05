@@ -28,11 +28,36 @@ Required fields are data, so a new kind is a row insert, not a code change.
 
 | kind | required | optional |
 |---|---|---|
-| grocery (per item; item falls back to post-level value) | item, qty, unit, expected_rate, needed_by | brand, variant |
+| grocery (per item; item falls back to post-level value) | item, qty, unit, needed_by | brand, variant, expected_rate (never asked — filled from purchase history by `app/feed/expected_rate.py`), assigned_to |
 | task (plumbing, repairs, maintenance …) | what, assigned_to, needed_by | location_in_house, budget |
 | ticket_booking | from, to, travel_date, passengers, assigned_to | mode, time_pref |
 | bill | bill_type, amount, due_date, assigned_to | account_ref |
 | alert | message, recipients, repeat, interval_minutes (only if repeat) | until |
+| appointment | what, appointment_date, appointment_time | for_member, assigned_to, location |
+| errand (bank, post office, courier …) | what, assigned_to, needed_by | location |
+| shopping (non-grocery buys) | item, assigned_to | needed_by, budget |
+| misc (fits nowhere else) | what | assigned_to, needed_by |
+
+`post_kind` / `post_kind_field` are owned by `app/seed.py`: re-running the seed brings existing
+rows in line with the code (other tables are only ever added to).
+
+### From one message to posts — `app/feed`
+
+`understanding/prompts.py` `MULTI_SYSTEM_PROMPT` (via `UnderstandingClient.extract_multi`) only
+extracts: groceries into `items`, everything else into `actions`, with date / time / person
+words copied verbatim. The model is never told today's date. Everything after that is pure Python:
+
+| step | module |
+|---|---|
+| post kind + display category ("Home Repair", "Errands" …) | `categorize.py` (keyword rules; unknown → `misc`) |
+| "next Friday", "on the 10th", "at 5" → dates/times; two readings → a question with both as chips | `dates.py` |
+| "Dad", "me", "Amma" → member id | `people.py` |
+| extraction → draft posts (`fields_json`); drops phrases the author never typed | `drafts.py` |
+| already on the board? fill its empty fields instead | `dedupe.py` |
+| grocery expected rate from purchase history / `market_price` | `expected_rate.py` |
+| what's missing | `completeness.py` (unchanged) |
+| the one question to ask next | `questions.py` |
+| "Got it. I added: …" | `confirm.py` |
 
 Repeated alerts ("keep reminding Dad about the plumber") are `reminder` rows on the post:
 fire every `interval_minutes` until the member acknowledges / finishes (`stop_on`).

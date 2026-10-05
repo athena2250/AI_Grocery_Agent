@@ -48,6 +48,13 @@ class ExtractedItem(BaseModel):
         default=None,
         description='e.g. "usual", "same", "seeds", "leaves", "powder"; never resolved by the LLM.',
     )
+    needed_by_phrase: str | None = Field(
+        default=None,
+        description='Verbatim date words ("tomorrow", "for Sunday"); resolved by feed/dates.py.',
+    )
+    assignee_mention: str | None = Field(
+        default=None, description='Verbatim person who should buy it ("Mom", "me").'
+    )
 
     @field_validator("qty")
     @classmethod
@@ -74,6 +81,34 @@ class Ambiguity(BaseModel):
     options: list[str] = Field(default_factory=list)
 
 
+class ExtractedAction(BaseModel):
+    """One non-grocery thing to do, in the author's own words.
+
+    No category, no resolved date, no member id: the phrases are copied verbatim and
+    `app/feed` turns them into a post kind, a calendar date and a member deterministically.
+    """
+
+    raw_text: str
+    title: str
+    """Short imperative restatement in the author's words: "Fix bathroom tap"."""
+    assignee_mention: str | None = None
+    """Who should do it, verbatim ("Dad", "me"). Null when nobody was named."""
+    for_mention: str | None = None
+    """Whom it is for, verbatim ("Mom" in "Mom's doctor appointment")."""
+    date_phrase: str | None = None
+    """Verbatim: "next Friday", "on the 10th", "before Diwali"."""
+    time_phrase: str | None = None
+    """Verbatim: "at 5", "5:30 pm", "morning"."""
+    priority_phrase: str | None = None
+    """Verbatim, only if said: "urgent", "asap"."""
+    recurrence_phrase: str | None = None
+    """Verbatim, only if said: "every month", "daily"."""
+    location_phrase: str | None = None
+    """Verbatim: "bathroom", "bank"."""
+    amount: float | None = Field(default=None, ge=0)
+    """Only when the author said a number (a bill amount, a budget)."""
+
+
 class LLMExtraction(BaseModel):
     """Exactly what the LLM must return. One turn's worth of extraction."""
 
@@ -82,6 +117,9 @@ class LLMExtraction(BaseModel):
     inventory_updates: list[InventoryUpdate] = Field(default_factory=list)
     ambiguities: list[Ambiguity] = Field(default_factory=list)
     purchases_marked: list[str] = Field(default_factory=list)
+    actions: list[ExtractedAction] = Field(default_factory=list)
+    """Non-grocery actionable items (repairs, errands, bills, appointments …).
+    Only the multi-item prompt asks for these; the grocery prompt leaves it empty."""
 
 
 class UnderstandingContext(BaseModel):

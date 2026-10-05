@@ -16,7 +16,8 @@ An intelligent household grocery assistant whose primary user is a non-technical
 
 Every message a family member (Mom, Dad, the user) sends becomes a **post** in a family feed, shown to the others as a pop-up. Before a post goes out, the AI checks it is **complete** and asks the author questions until it is:
 
-- **Grocery:** every item needs item, quantity + unit, expected market rate, and when it's needed at home.
+- **Grocery:** every item needs item, quantity + unit, and when it's needed at home. The expected market rate is never asked — it is filled from purchase history (`backend/app/feed/expected_rate.py`).
+- **Other kinds (2026-10-05):** appointment, errand, shopping, misc. One message can produce several posts; the LLM only extracts (`MULTI_SYSTEM_PROMPT`), and `backend/app/feed/` categorizes, resolves dates, dedupes, picks the question and writes the confirmation.
 - **Tasks / alerts:** plumbing, repairs, maintenance, ticket booking — need what, who does it, by when. Alerts can **repeat** until the person acknowledges.
 - **Bills:** electricity ("current"), internet, maintenance … — which bill, amount, due date, who pays.
 
@@ -41,7 +42,7 @@ A functional Expo (React Native + TypeScript) app on the user's phone that prove
 **Framework choice:** Expo/React Native over Flutter — installs on the phone via "Expo Go" + QR code (no Xcode/Android Studio), JS/TS matches the future HTTP backend cleanly, chat UIs are trivial in RN.
 
 **Sandbox scope (in):**
-- UI follows the "Hearth" family-journal design (`Hearth.html`): onboarding → bottom tabs Home · Tasks · (+) · Groceries · More. The + opens "Type or speak" (`ComposeSheet`), which runs the AI turn and shows clarification chips inline; More holds Conversation, Pantry, Memory, History.
+- UI follows the "Hearth" family-journal design (`Hearth.html`): onboarding → bottom tabs Home · Tasks · (+) · Groceries · More. The + opens an Add task form (`AddSheet`: task · section · additional information → "Fill with Hearth AI"); Groceries hand off to "Type or speak" (`ComposeSheet`), which runs the AI turn and shows clarification chips inline, while other sections are filled by `state/tasks.ts` `fillTask` and saved to the Tasks tab; More holds Conversation, Pantry, Memory, History.
 - Conversation screen with bubbles + quick-reply chips for clarifications.
 - List screen grouped by category, with Item Detail modal showing product/qty/brand/variant/confidence/rationale/source.
 - Pantry (Available / Running low / Out of stock).

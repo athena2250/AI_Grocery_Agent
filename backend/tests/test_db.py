@@ -59,7 +59,8 @@ def test_seed_counts(engine):
         assert _count(s, ProductAlias) == len(data["aliases"])
         assert _count(s, Preference) == len(data["preferences"])
         kinds = set(s.exec(select(PostKindField.kind)).all())
-    assert kinds == {"grocery", "task", "ticket_booking", "bill", "alert"}
+    assert kinds == {"grocery", "task", "ticket_booking", "bill", "alert",
+                     "appointment", "errand", "shopping", "misc"}
 
 
 def test_seed_is_idempotent(engine):

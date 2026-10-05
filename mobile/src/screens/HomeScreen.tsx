@@ -7,12 +7,20 @@ import { useProfile } from '../state/ProfileContext';
 import { useUI } from '../components/UIProvider';
 import { Avatar, Button, Dot, Masthead, SectionHeading } from '../components/hearth';
 import { pendingItems } from '../state/planner';
-import { homeSuggestions, predict } from '../state/prediction';
+import { homeSuggestions } from '../state/prediction';
 import { useAddProposal } from './useAddProposal';
 
 const c = theme.colors;
 const f = theme.font;
-const DAY_MS = 86_400_000;
+
+interface ListRow {
+  key: string;
+  dot: string;
+  title: string;
+  sub: string;
+  action: string;
+  onAction: () => void;
+}
 
 interface Card {
   key: string;
@@ -26,60 +34,48 @@ interface Card {
 }
 
 const greeting = (d: Date) => (d.getHours() < 12 ? 'Good morning,' : d.getHours() < 17 ? 'Good afternoon,' : 'Good evening,');
-const shortDate = (d: Date) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
 export function HomeScreen({ navigation }: { navigation: any }) {
   const { state, dismissRestock } = useHousehold();
-  const { me, activeMembers } = useProfile();
+  const { me, profile } = useProfile();
   const { openAdd } = useUI();
   const addProposal = useAddProposal();
   const now = new Date();
 
-  const { restock, predicted } = useMemo(() => homeSuggestions(state), [state]);
-  const toBuy = pendingItems(state.listItems).length;
+  const { restock } = useMemo(() => homeSuggestions(state), [state]);
+  const toBuy = pendingItems(state.listItems);
   const approved = state.list.status === 'approved';
 
   const cards: Card[] = [];
   const question = state.pendingClarifications[state.pendingClarifications.length - 1];
-  if (question) {
-    cards.push({
-      key: 'question', dot: c.red, title: 'Hearth has a question', sub: question.question,
-      action: 'Answer', primary: true, onAction: () => navigation.navigate('Conversation'),
-    });
-  }
   for (const p of restock) {
     const amount = p.qty != null ? `${p.qty} ${p.unit ?? ''}`.trim() : '';
     cards.push({
       key: `restock_${p.productId}`, dot: c.amber, title: `${p.product} is running out`, sub: p.rationale,
-      action: amount ? `Add ${amount}` : 'Add to list', primary: !question,
+      action: amount ? `Add ${amount}` : 'Add to list', primary: true,
       onAction: () => addProposal(p),
       secondary: { label: 'Not now', onPress: () => dismissRestock(p.productId) },
     });
   }
-  if (toBuy > 0) {
-    cards.push({
+
+  // One row per category with something open. Only groceries live on the phone so far;
+  // Home repair, Errands, Bills … join here as their lists arrive with the family feed.
+  const posterNames = (ids: (string | undefined)[]) =>
+    [...new Set(ids)]
+      .map((id) => (id === me.id ? 'You' : profile.members.find((m) => m.id === id)?.name))
+      .filter(Boolean)
+      .join(', ');
+  const lists: ListRow[] = [];
+  if (toBuy.length > 0) {
+    const from = posterNames(toBuy.map((li) => li.addedByMemberId));
+    lists.push({
       key: 'groceries', dot: approved ? c.green : c.amber, title: 'Groceries',
-      sub: `${toBuy} ${toBuy === 1 ? 'item' : 'items'} to buy · ${approved ? 'approved, ready for the store' : 'waiting for your OK'}`,
+      sub: `${toBuy.length} ${toBuy.length === 1 ? 'item' : 'items'}${from ? ` from ${from}` : ''}`,
       action: approved ? 'View list' : 'Review list',
       onAction: () => navigation.navigate('Groceries'),
     });
   }
-
-  // Upcoming: what the purchase history says is due soon (plan_10 statistics), soonest first.
-  const upcoming = useMemo(() => {
-    const onList = new Set(pendingItems(state.listItems).map((li) => li.productId));
-    const askable = new Map(predicted.map((p) => [p.productId, p]));
-    const at = new Date();
-    return predict(state.history, state.inventory, at)
-      .filter((p) => p.status !== 'NOT_NEEDED' && !onList.has(p.productId) && !restock.some((r) => r.productId === p.productId))
-      .map((p) => {
-        const due = new Date(new Date(p.lastPurchasedAt).getTime() + p.meanIntervalDays * DAY_MS);
-        const name = state.products.find((x) => x.id === p.productId)?.name ?? p.productId;
-        return { id: p.productId, name, due, proposal: askable.get(p.productId), status: p.status };
-      })
-      .sort((a, b) => a.due.getTime() - b.due.getTime())
-      .slice(0, 4);
-  }, [state, predicted, restock]);
+  const open = cards.length + lists.length;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -95,8 +91,24 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           ) : null}
         />
 
-        <SectionHeading title="Today" note={cards.length ? `${cards.length} ${cards.length === 1 ? 'thing' : 'things'}` : undefined} style={{ marginTop: 26 }} />
-        {cards.length === 0 ? (
+        {question ? (
+          <Pressable
+            onPress={() => navigation.navigate('Conversation')}
+            style={styles.ask}
+            accessibilityRole="button"
+            accessibilityLabel={`Hearth asks: ${question.question}. Answer`}
+          >
+            <Dot color={c.accent} />
+            <Text style={styles.askText} numberOfLines={2}>
+              <Text style={styles.askLead}>Hearth asks · </Text>
+              {question.question}
+            </Text>
+            <Text style={styles.askAction}>Answer ›</Text>
+          </Pressable>
+        ) : null}
+
+        <SectionHeading title="TODO" note={open ? `${open} ${open === 1 ? 'thing' : 'things'}` : undefined} style={{ marginTop: 26 }} />
+        {open === 0 ? (
           <View style={styles.card}>
             <Text style={styles.calm}>Nothing needs you today.</Text>
             <Button label="Add something" kind="outline" compact onPress={openAdd} style={{ marginTop: 14 }} />
@@ -119,31 +131,14 @@ export function HomeScreen({ navigation }: { navigation: any }) {
           </View>
         ))}
 
-        <SectionHeading title="Upcoming" />
-        {upcoming.length === 0 ? (
-          <Text style={[styles.cardSub, styles.upEmpty]}>Nothing due soon. Hearth learns your rhythm as you shop.</Text>
-        ) : upcoming.map((u) => (
-          <Pressable
-            key={u.id}
-            disabled={!u.proposal}
-            onPress={() => u.proposal && addProposal(u.proposal)}
-            style={styles.upRow}
-          >
-            <Text style={styles.upDate}>{u.due <= now ? 'DUE' : shortDate(u.due).toUpperCase()}</Text>
-            <Text style={styles.upTitle}>{u.name}</Text>
-            <Dot color={u.status === 'BUY_NOW' ? c.amber : c.green} style={{ transform: [{ translateY: -4 }] }} />
-          </Pressable>
-        ))}
-
-        <SectionHeading title="Your family" />
-        {activeMembers.map((m) => (
-          <Pressable key={m.id} onPress={() => navigation.navigate('Profile', { memberId: m.id })} style={styles.famRow}>
-            <Avatar initial={m.name[0]} color={m.color} size={42} />
+        {lists.map((row) => (
+          <Pressable key={row.key} onPress={row.onAction} style={styles.listRow}>
+            <Dot color={row.dot} style={{ transform: [{ translateY: -2 }] }} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.famName}>{m.name}</Text>
-              <Text style={styles.famRole}>{m.relation}</Text>
+              <Text style={styles.listTitle}>{row.title}</Text>
+              <Text style={styles.listSub}>{row.sub}</Text>
             </View>
-            {m.id === me.id ? <Text style={styles.famNote}>This phone</Text> : null}
+            <Button label={row.action} kind="outline" compact onPress={row.onAction} />
           </Pressable>
         ))}
       </ScrollView>
@@ -162,12 +157,15 @@ const styles = StyleSheet.create({
   secondary: { paddingVertical: 8 },
   secondaryText: { fontFamily: f.sansBold, fontSize: 14, color: c.textFaint },
   calm: { fontFamily: f.serifItalic, fontSize: 20, color: c.textSoft },
-  upEmpty: { paddingLeft: 0, paddingVertical: 15, borderTopWidth: 1, borderTopColor: c.hairline, marginTop: 0 },
-  upRow: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingVertical: 15, borderTopWidth: 1, borderTopColor: c.hairline },
-  upDate: { width: 56, fontFamily: f.sansBold, fontSize: 12, letterSpacing: 1, color: c.textFaint },
-  upTitle: { flex: 1, fontFamily: f.serif, fontSize: 20, color: c.ink },
-  famRow: { flexDirection: 'row', alignItems: 'center', gap: 15, paddingVertical: 14, borderTopWidth: 1, borderTopColor: c.hairline },
-  famName: { fontFamily: f.serif, fontSize: 20, color: c.ink },
-  famRole: { fontFamily: f.sans, fontSize: 13, letterSpacing: 0.4, color: c.textFaint },
-  famNote: { fontFamily: f.sansMedium, fontSize: 13, color: c.textMuted },
+  ask: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 22,
+    paddingVertical: 11, paddingHorizontal: 14, borderRadius: theme.radius.lg,
+    backgroundColor: c.paper, borderWidth: 1, borderColor: c.accentSoft,
+  },
+  askText: { flex: 1, fontFamily: f.sans, fontSize: 15, lineHeight: 20, color: c.text },
+  askLead: { fontFamily: f.sansBold, color: c.accent },
+  askAction: { fontFamily: f.sansBold, fontSize: 14, color: c.accent },
+  listRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 16, borderTopWidth: 1, borderTopColor: c.hairline },
+  listTitle: { fontFamily: f.serif, fontSize: 22, lineHeight: 26, color: c.ink },
+  listSub: { fontFamily: f.sans, fontSize: 14, color: c.textMuted, marginTop: 2 },
 });

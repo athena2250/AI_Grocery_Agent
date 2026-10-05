@@ -14,7 +14,7 @@ from typing import Any, Protocol, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from .prompts import build_messages, retry_correction_message
+from .prompts import build_messages, build_multi_messages, retry_correction_message
 from .schema import LLMExtraction, UnderstandingContext
 
 DEFAULT_MODEL = "qwen2.5:7b-instruct"
@@ -76,6 +76,16 @@ class UnderstandingClient:
         ctx = context or UnderstandingContext()
         return await extract_validated(
             self._client, self._model, build_messages(utterance, ctx), LLMExtraction
+        )
+
+    async def extract_multi(
+        self, utterance: str, context: UnderstandingContext | None = None
+    ) -> LLMExtraction:
+        """Family-feed message → groceries in `items`, everything else in `actions`."""
+
+        ctx = context or UnderstandingContext()
+        return await extract_validated(
+            self._client, self._model, build_multi_messages(utterance, ctx), LLMExtraction
         )
 
 
