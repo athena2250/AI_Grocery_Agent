@@ -85,7 +85,8 @@ AI_Grocery_Agent/
 │       ├── data/             # seed products, aliases, memory, history
 │       ├── types.ts
 │       └── theme.ts
-├── backend/                  # Phase 2 — placeholder for now
+├── backend/                  # Phase 2 — FastAPI + SQLModel models/stores
+├── admin/                    # admin console — separate service (own port + ADMIN_TOKEN) over the same DB; see admin/README.md
 └── tests/                    # jest for mock AI + reducer
 ```
 
