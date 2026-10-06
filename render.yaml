@@ -1,0 +1,42 @@
+# One-click deploy of the Hearth API + its database on Render (render.com → New → Blueprint).
+# Singapore is the closest region to India. After the first deploy, fill in the SMS keys
+# (marked sync: false) in the dashboard. Any Docker host works too: see backend/DEPLOY.md.
+services:
+  - name: hearth-api
+    type: web
+    runtime: docker
+    plan: 0.5c-512mb
+    region: singapore
+    rootDir: ./backend
+    dockerContext: ./backend
+    dockerfilePath: Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hearth-db
+          property: connectionString
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: SMS_PROVIDER
+        value: msg91
+      - key: MSG91_AUTH_KEY
+        sync: false
+      - key: MSG91_TEMPLATE_ID
+        sync: false
+      # The LLM (Ollama on a home Mac, behind scripts/share-ollama.sh). Without these the
+      # app still works: messages the phone's rules don't recognise get "say it another way".
+      - key: OLLAMA_HOST
+        sync: false
+      - key: OLLAMA_API_KEY
+        sync: false
+      - key: OLLAMA_MODEL
+        value: llama3:8b
+
+databases:
+  - name: hearth-db
+    plan: 0.1c-256mb
+    region: singapore
+    diskSizeGB: 1

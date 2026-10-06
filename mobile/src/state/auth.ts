@@ -10,6 +10,10 @@ export interface Account {
   /** Who they are at home: Mom, Dad, Son … (backend `member.relation`). */
   relation: string;
   createdAt: string;
+  /** Server mode only (backend `member.id`, `member.household_id`, `member.role`). */
+  memberId?: string;
+  householdId?: string;
+  role?: 'owner' | 'member';
 }
 
 export type AuthMode = 'sign_in' | 'sign_up';
@@ -42,7 +46,10 @@ export interface PendingOtp {
 
 export type AuthError =
   | 'invalid_name' | 'invalid_relation' | 'no_account' | 'account_exists' | 'name_mismatch'
-  | 'resend_too_soon' | 'no_code' | 'expired' | 'wrong_code' | 'too_many_attempts';
+  | 'resend_too_soon' | 'no_code' | 'expired' | 'wrong_code' | 'too_many_attempts'
+  // From the server (backend/app/auth/store.py MESSAGES, plus transport errors).
+  | 'invalid_phone' | 'removed' | 'invalid_invite' | 'phone_in_other_home' | 'phone_taken'
+  | 'rate_limited' | 'not_allowed' | 'sms_failed' | 'network' | 'server';
 
 export const AUTH_MESSAGES: Record<AuthError, string> = {
   invalid_name: 'Please tell us your name.',
@@ -55,6 +62,16 @@ export const AUTH_MESSAGES: Record<AuthError, string> = {
   expired: 'That code has expired. Send a new one.',
   wrong_code: 'That code isn’t right. Check it and try again.',
   too_many_attempts: 'Too many tries. Send a new code.',
+  invalid_phone: 'That doesn’t look like a mobile number.',
+  removed: 'This number was taken out of its home. Ask someone there to add it again.',
+  invalid_invite: 'That home code isn’t working. It may have expired — ask for a new one.',
+  phone_in_other_home: 'This number already belongs to another home.',
+  phone_taken: 'Someone already uses this number.',
+  rate_limited: 'Too many codes for this number. Please try again later.',
+  not_allowed: 'You can’t do that for this home.',
+  sms_failed: 'We couldn’t text you just now. Try again.',
+  network: 'No connection. Check the internet and try again.',
+  server: 'Something went wrong. Please try again.',
 };
 
 /** A random 6-digit code; `random` is injectable so tests are repeatable. */

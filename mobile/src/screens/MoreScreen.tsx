@@ -10,17 +10,19 @@ import { formatPhone } from '../state/phone';
 import { getAuthService } from '../services/serviceFactory';
 import { useUI } from '../components/UIProvider';
 import { Masthead, SectionHeading } from '../components/hearth';
+import { useAccountActions } from '../state/useAccountActions';
 
 const c = theme.colors;
 const f = theme.font;
 
-/** Everything else: the conversation log, pantry, memory, history, sign out, and sandbox reset. */
+/** Everything else: the conversation log, pantry, memory, history, the account, and (sandbox only) reset. */
 export function MoreScreen({ navigation }: { navigation: any }) {
   const { state, reset } = useHousehold();
-  const { me, ownerId, resetProfile } = useProfile();
+  const { me, ownerId, resetProfile, shared } = useProfile();
   const { archive, taskPrefs } = useTasks();
   const { account, signOut } = useAuth();
   const { ask } = useUI();
+  const { confirmSignOut, inviteFamily, confirmDelete, canInvite } = useAccountActions();
 
   const low = state.inventory.filter((i) => i.state !== 'available').length;
   const rows = [
@@ -32,12 +34,6 @@ export function MoreScreen({ navigation }: { navigation: any }) {
     // Admin only: tasks that have left the board.
     ...(me.id === ownerId ? [{ route: 'TaskHistory', title: 'Task history', desc: `${archive.length} past tasks · admin only` }] : []),
   ];
-
-  const confirmSignOut = () => ask({
-    title: 'Sign out?',
-    body: 'Your home’s lists and memory stay on this phone. Sign in again with your name, number and a code.',
-    options: [{ label: 'Sign out', kind: 'danger', onPress: signOut }],
-  });
 
   const confirmReset = () => ask({
     title: 'Start over?',
@@ -66,23 +62,42 @@ export function MoreScreen({ navigation }: { navigation: any }) {
         </View>
 
         <SectionHeading title="Account" />
+        {canInvite ? (
+          <Pressable onPress={inviteFamily} style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Invite family</Text>
+              <Text style={styles.desc}>A home code so others join and share the lists</Text>
+            </View>
+            <Text style={styles.chev}>›</Text>
+          </Pressable>
+        ) : null}
         <Pressable onPress={confirmSignOut} style={styles.row}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.title, { color: c.accent }]}>Sign out</Text>
             <Text style={styles.desc}>{account ? `Signed in as ${account.name} · ${formatPhone(account.phone)}` : 'Not signed in'}</Text>
           </View>
         </Pressable>
+        <Pressable onPress={confirmDelete} style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, { color: c.red }]}>Delete my account</Text>
+            <Text style={styles.desc}>Removes your name and number for good</Text>
+          </View>
+        </Pressable>
 
         <SectionHeading title="Coming soon" />
         <Text style={styles.soon}>Bills, repairs and plans — shared with the whole family as posts — arrive with the family feed.</Text>
 
-        <SectionHeading title="Sandbox" />
-        <Pressable onPress={confirmReset} style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { color: c.accent }]}>Reset everything</Text>
-            <Text style={styles.desc}>Back to the sample household, signed out</Text>
-          </View>
-        </Pressable>
+        {shared ? null : (
+          <>
+            <SectionHeading title="Sandbox" />
+            <Pressable onPress={confirmReset} style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.title, { color: c.accent }]}>Reset everything</Text>
+                <Text style={styles.desc}>Back to the sample household, signed out</Text>
+              </View>
+            </Pressable>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

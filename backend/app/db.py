@@ -30,6 +30,7 @@ MODEL_MODULES = (
     "app.history.models",
     "app.receipts.models",
     "app.auth.models",
+    "app.sync.models",
 )
 
 
@@ -43,7 +44,13 @@ def import_models() -> None:
 
 
 def database_url() -> str:
-    return os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    """Hosts hand out `postgres://` / `postgresql://`; SQLAlchemy needs the psycopg driver named."""
+
+    url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
 
 
 def _sqlite_foreign_keys(dbapi_conn: Any, _record: Any) -> None:

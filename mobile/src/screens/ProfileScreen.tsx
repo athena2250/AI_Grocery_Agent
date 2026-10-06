@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, type TextInputProps } from 'react-native';
 import { theme, MEMBER_COLORS } from '../theme';
 import { useHousehold } from '../state/HouseholdContext';
@@ -6,6 +6,7 @@ import { useProfile } from '../state/ProfileContext';
 import { DIET_FLAGS, DIET_TYPES, memberActivity } from '../state/profile';
 import { formatPhone, localDigits, splitE164, toE164 } from '../state/phone';
 import { useAuth } from '../state/AuthContext';
+import { useAccountActions } from '../state/useAccountActions';
 import { useUI } from '../components/UIProvider';
 import { SubScreen } from '../components/SubScreen';
 import { Avatar, Button, Chip, SectionHeading } from '../components/hearth';
@@ -22,7 +23,8 @@ export function ProfileScreen({ route, navigation }: { route: any; navigation: a
   const { state } = useHousehold();
   const { profile, me, ownerId, activeMembers, updateMember, setMe, makeOwner } = useProfile();
   const { flash, ask } = useUI();
-  const { account, signOut } = useAuth();
+  const { account } = useAuth();
+  const { confirmSignOut, confirmDelete } = useAccountActions();
 
   const member = profile.members.find((m) => m.id === route.params?.memberId) ?? me;
   const isMe = member.id === me.id;
@@ -35,7 +37,8 @@ export function ProfileScreen({ route, navigation }: { route: any; navigation: a
   const { country } = splitE164(member.phone);
   const [phoneError, setPhoneError] = useState(false);
   const [allergy, setAllergy] = useState('');
-  useEffect(() => { setPhoneError(false); setAllergy(''); }, [member.id]);
+  const [shownFor, setShownFor] = useState(member.id);
+  if (shownFor !== member.id) { setShownFor(member.id); setPhoneError(false); setAllergy(''); }
 
   const toggleFlag = (flag: string) => edit({
     dietFlags: member.dietFlags.includes(flag) ? member.dietFlags.filter((x) => x !== flag) : [...member.dietFlags, flag],
@@ -183,15 +186,8 @@ export function ProfileScreen({ route, navigation }: { route: any; navigation: a
 
         {isMe ? (
           <View style={styles.actions}>
-            <Button
-              label="Sign out"
-              kind="accentOutline"
-              onPress={() => ask({
-                title: 'Sign out?',
-                body: 'Your home’s lists and memory stay on this phone.',
-                options: [{ label: 'Sign out', kind: 'danger', onPress: signOut }],
-              })}
-            />
+            <Button label="Sign out" kind="accentOutline" onPress={confirmSignOut} />
+            <Button label="Delete my account" kind="quiet" onPress={confirmDelete} style={{ marginTop: 8 }} />
           </View>
         ) : null}
 
@@ -239,7 +235,8 @@ function DraftInput({ value, onCommit, sanitize, style, ...rest }: Omit<TextInpu
   sanitize?: (v: string) => string;
 }) {
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  const [synced, setSynced] = useState(value);
+  if (synced !== value) { setSynced(value); setDraft(value); }
   const commit = () => {
     const v = draft.trim();
     if (v === value) return;

@@ -24,6 +24,7 @@ import {
 import { restockPurchased, upsertInventory } from './inventory';
 import { CATEGORY_ORDER, mergeIntoDraft, pendingItems, visibleItems } from './planner';
 import { extractItemName, newProduct } from './catalog';
+import { clock, uid } from './eventClock';
 
 export type Action =
   | { type: 'HYDRATE'; payload: HouseholdState }
@@ -60,8 +61,7 @@ export interface ManualItem {
   usedUsualQty?: boolean;
 }
 
-let _c = 0;
-export const uid = (p: string) => `${p}_${Date.now()}_${_c++}`;
+export { uid } from './eventClock';
 
 /** New rows get `by`; a row that was already there keeps whoever added it first, even when refined. */
 function stampAdder(before: ListItem[], after: ListItem[], by: string | undefined): ListItem[] {
@@ -207,7 +207,7 @@ function learnCatalog(state: HouseholdState, r: AIResponse): Pick<HouseholdState
 
 /** "Add item": file a new product if needed, put the row on the list, and learn only what she picked. */
 function addManualItem(state: HouseholdState, m: ManualItem, by?: string): HouseholdState {
-  const now = new Date();
+  const now = clock();
   const known = state.products.some((p) => p.id === m.product.id);
   const alias = m.product.name.toLowerCase();
   const products = known ? state.products : [...state.products, m.product];
@@ -258,7 +258,7 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       return { ...state, turns: [...state.turns, action.turn] };
     case 'APPLY_AI': {
       const r = action.response;
-      const now = new Date();
+      const now = clock();
       // Before planning, so an item filed this turn is categorized from the catalog like any other.
       const catalog = learnCatalog(state, r);
       const corrected = new Set((r.corrections ?? []).map((c) => c.itemId));
@@ -297,7 +297,7 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       return {
         ...state,
         listItems: state.listItems.map((li) => (li.id === action.itemId ? { ...li, status: 'purchased' } : li)),
-        ...recordPurchases(state, [item], new Date(), action.by),
+        ...recordPurchases(state, [item], clock(), action.by),
       };
     }
     case 'REMOVE_ITEM':
@@ -308,9 +308,9 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
         listItems: state.listItems.map((li) => (li.id === action.itemId ? { ...li, status: 'removed' } : li)),
       };
     case 'SET_INVENTORY':
-      return { ...state, inventory: upsertInventory(state.inventory, action.update, new Date()) };
+      return { ...state, inventory: upsertInventory(state.inventory, action.update, clock()) };
     case 'SAVE_AS_USUAL':
-      return { ...state, preferences: saveAsUsual(state.preferences, action.fields, new Date()) };
+      return { ...state, preferences: saveAsUsual(state.preferences, action.fields, clock()) };
     case 'FORGET_PREFERENCE':
       return { ...state, preferences: state.preferences.filter((p) => p.productId !== action.productId) };
     case 'FORGET_ALIAS_PREFERENCE':
@@ -326,14 +326,14 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       if (pendingItems(state.listItems).some((li) => li.productId === p.productId)) return state;
       // Taking the remembered amount is picking the remembered option — same as the chat restock chip.
       const preferences = p.source === 'household_memory' && p.qty != null
-        ? confirmPreference(state.preferences, p.productId, new Date())
+        ? confirmPreference(state.preferences, p.productId, clock())
         : state.preferences;
       return { ...state, ...addToList(state, [{ ...p, id: uid('it'), needsConfirmation: false }], action.by), preferences };
     }
     case 'DISMISS_RESTOCK':
       return { ...state, dismissedRestocks: dismissRestock(state, state.inventory, action.productId) };
     case 'DISMISS_PREDICTION':
-      return { ...state, dismissedPredictions: { ...state.dismissedPredictions, [action.productId]: new Date().toISOString() } };
+      return { ...state, dismissedPredictions: { ...state.dismissedPredictions, [action.productId]: clock().toISOString() } };
     case 'SET_PRODUCT_CATEGORY':
       return setProductCategory(state, action.productId, action.category);
     case 'ADD_ITEM':

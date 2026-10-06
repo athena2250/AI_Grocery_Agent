@@ -157,7 +157,9 @@ def _upsert(session: Session, row: SQLModel, *pk: Any) -> int:
     return changed
 
 
-def seed(session: Session, data: dict[str, Any] | None = None) -> dict[str, int]:
+def seed(session: Session, data: dict[str, Any] | None = None, *, demo: bool = True) -> dict[str, int]:
+    """`demo=False` (the live server) loads only what the code owns: post kinds and the catalog."""
+
     data = data or json.loads(SEED_FILE.read_text())
     now = utcnow()
     row: SQLModel
@@ -165,10 +167,6 @@ def seed(session: Session, data: dict[str, Any] | None = None) -> dict[str, int]
 
     def count(name: str, n: int) -> None:
         added[name] = added.get(name, 0) + n
-
-    count("household", _add_missing(session, Household(id=HOUSEHOLD_ID, name="Home"), HOUSEHOLD_ID))
-    for m in MEMBERS:
-        count("member", _add_missing(session, Member(household_id=HOUSEHOLD_ID, **m), m["id"]))
 
     for kind, label, desc in POST_KINDS:
         count("post_kind", _upsert(session, PostKind(kind=kind, label=label, description=desc), kind))
@@ -192,6 +190,14 @@ def seed(session: Session, data: dict[str, Any] | None = None) -> dict[str, int]
         if (a["alias"], a["product_id"]) not in existing:
             session.add(ProductAlias(**a))
             count("product_alias", 1)
+
+    if not demo:
+        return added
+
+    count("household", _add_missing(session, Household(id=HOUSEHOLD_ID, name="Home"), HOUSEHOLD_ID))
+    for m in MEMBERS:
+        count("member", _add_missing(session, Member(household_id=HOUSEHOLD_ID, **m), m["id"]))
+    session.flush()
 
     for p in data["preferences"]:
         row = Preference(household_id=HOUSEHOLD_ID, last_confirmed_at=now, **p)
@@ -221,11 +227,11 @@ def seed(session: Session, data: dict[str, Any] | None = None) -> dict[str, int]
     return added
 
 
-def main(engine: Engine | None = None) -> dict[str, int]:
+def main(engine: Engine | None = None, *, demo: bool = True) -> dict[str, int]:
     engine = engine or get_engine()
     init_db(engine)
     with Session(engine) as session:
-        added = seed(session)
+        added = seed(session, demo=demo)
         session.commit()
     return added
 

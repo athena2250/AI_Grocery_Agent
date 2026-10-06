@@ -89,6 +89,18 @@ export class MockAuthService implements AuthService {
     return { ok: true, account, created: true };
   }
 
+  async signOut(): Promise<void> {}
+
+  async deleteAccount(account: Account): Promise<{ ok: true; householdDeleted: boolean }> {
+    const { [account.phone]: _gone, ...rest } = await this.accounts();
+    await this.store.setItem(KEY, JSON.stringify(rest));
+    return { ok: true, householdDeleted: Object.keys(rest).length === 0 };
+  }
+
+  async createInvite(): Promise<null> {
+    return null;
+  }
+
   async forgetAll(): Promise<void> {
     this.pending.clear();
     await this.store.removeItem(KEY).catch(() => {});

@@ -36,6 +36,10 @@ class OllamaChatClient(Protocol):
 class HttpxOllamaClient:
     base_url: str = DEFAULT_BASE_URL
     timeout: float = 60.0
+    api_key: str | None = None
+    """Sent as a bearer token — for an Ollama behind app/ollama_gate.py (or any proxy)."""
+    keep_alive: str = "1h"
+    """Keep the model in memory between messages: a cold load adds ~10 s to the first reply."""
 
     async def chat(self, model: str, messages: list[dict[str, str]]) -> str:
         payload: dict[str, Any] = {
@@ -43,10 +47,12 @@ class HttpxOllamaClient:
             "messages": messages,
             "format": "json",
             "stream": False,
+            "keep_alive": self.keep_alive,
             "options": {"temperature": 0.1},
         }
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(f"{self.base_url}/api/chat", json=payload)
+            resp = await client.post(f"{self.base_url.rstrip('/')}/api/chat", json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
         # Ollama chat response: { "message": { "role": "...", "content": "..." }, ... }
@@ -121,3 +127,20 @@ def _parse(raw: str, schema: type[M]) -> M:
     except json.JSONDecodeError as e:
         raise ValueError(f"invalid JSON: {e}") from e
     return schema.model_validate(data)
+
+
+
+def client_from_env() -> UnderstandingClient:
+    """The extractor the server uses: the local/remote Ollama at OLLAMA_HOST running
+    OLLAMA_MODEL. Swappable by design: the rest of the pipeline only sees `UnderstandingClient`."""
+
+    import os
+
+    return UnderstandingClient(
+        HttpxOllamaClient(
+            os.environ.get("OLLAMA_HOST", DEFAULT_BASE_URL),
+            api_key=os.environ.get("OLLAMA_API_KEY") or None,
+        ),
+        model=os.environ.get("OLLAMA_MODEL", DEFAULT_MODEL),
+        fallback_model=None,
+    )

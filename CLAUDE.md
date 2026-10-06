@@ -63,6 +63,14 @@ Python 3.11 + FastAPI + PostgreSQL (SQLModel; local DB `ai_grocery_agent`, SQLit
 
 The JSON shape returned by the mock in Phase 1 is deliberately identical to what the FastAPI `/chat` endpoint will return in Phase 2.
 
+### Going live (2026-10-06)
+
+The app ships in two modes, chosen at build time by `EXPO_PUBLIC_API_URL` (`mobile/eas.json`): empty = the Phase 1 sandbox (all on the phone), set = real sign-in + family sharing against `backend/app/main.py` (FastAPI). Steps, SMS (DLT for India), stores: `backend/DEPLOY.md`; deploy blueprint: `render.yaml`.
+
+- **Sign-in:** `/auth/*` wraps `auth/store.py`; SMS senders in `auth/sms.py` (console dev-only, msg91, twilio). Token in `expo-secure-store`. Join a home with a home code (`HRTH-XXXX`, More → Invite family). Delete my account: `auth.store.delete_account` + `DELETE /me`.
+- **Family sharing = a shared event log** (`sync_event`, `/sync/{grocery|tasks|profile}`). Phones send reducer actions as events; every phone replays the household's log in server order through the same pure reducers (`state/reducer.ts`, `state/tasksReducer.ts`, `state/profileReducer.ts`), so they converge. Reducers must take time and new ids from `state/eventClock.ts` (`clock()`, `uid()`), never `new Date()` / `Math.random()` directly. The server stores events without interpreting them — projecting them into the SQL tables (principle 5) is still to do. Client: `sync/log.ts` (pure) + `sync/useSyncedReducer.ts`. "Who is holding this phone" (`meId`) stays per phone.
+- **Understanding (hybrid):** the on-phone rules (`MockAIService.understood`) answer first; only what they don't recognise, or several items joined with and/aur/commas, goes to `POST /understand` (Ollama extraction). `HybridAIService.toCommands` turns that back into plain commands for the same rules, so questions, chips and memory gating stay deterministic. Ollama runs on a home Mac behind `backend/app/ollama_gate.py` (bearer key, `/api/chat` only) plus a tunnel (`scripts/share-ollama.sh`); the server reads `OLLAMA_HOST`, `OLLAMA_API_KEY` and `OLLAMA_MODEL` (`llama3:8b`).
+
 ### Phase 3+ (roadmap)
 
 Confidence-gated suggestions → purchase prediction (simple statistics first, no ML) → receipt OCR → budget engine + price history → recipe module → web UI → multi-user auth → WhatsApp bot → store route optimizer.

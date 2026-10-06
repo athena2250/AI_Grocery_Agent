@@ -39,19 +39,27 @@ function brandIn(text: string, productId: string, aliases: ProductAlias[]): stri
   return findAliasMatches(text, aliases).find((a) => a.productId === productId)?.brand;
 }
 
+const UNIT_WORDS = 'kilograms|kilogram|kilos|kilo|kgs|kg|grams|gram|gms|gm|g|litres|liters|litre|liter|ltr|l|ml|packets|packet|packs|pack|dozen|pcs|pieces|bunches|bunch|loaves|loaf';
+
 function parseQuantity(text: string): { qty: number; unit: string } | null {
   const t = norm(text).replace(/\s+/g, ' ');
-  // e.g. "100g", "100 g", "1 kg", "2kg", "1/2 kg", "half kg", "500ml", "1 l"
-  const halfMatch = t.match(/(½|half|1\/2)\s*(kg|g|l|ml|litre|liter|pack|dozen|pcs|bunch|loaf)/);
+  // e.g. "100g", "100 g", "1 kg", "2 kilos", "1/2 kg", "half kg", "500ml", "1 l", "2 packets"
+  const halfMatch = t.match(new RegExp(`(½|half|1\\/2)\\s*(?:a\\s+)?(${UNIT_WORDS})\\b`));
   if (halfMatch) return { qty: 0.5, unit: normalizeUnit(halfMatch[2]) };
-  const m = t.match(/(\d+(?:\.\d+)?)\s*(kg|g|l|ml|litre|liter|pack|dozen|pcs|bunch|loaf)/);
+  const m = t.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${UNIT_WORDS})\\b`));
   if (m) return { qty: parseFloat(m[1]), unit: normalizeUnit(m[2]) };
   return null;
 }
 
 function normalizeUnit(u: string): string {
   const x = u.toLowerCase();
-  if (x === 'litre' || x === 'liter' || x === 'l') return 'L';
+  if (/^(kilograms?|kilos?|kgs)$/.test(x)) return 'kg';
+  if (/^(grams?|gms?)$/.test(x)) return 'g';
+  if (/^(litres?|liters?|ltr|l)$/.test(x)) return 'L';
+  if (/^(packets?|packs)$/.test(x)) return 'pack';
+  if (x === 'pieces') return 'pcs';
+  if (x === 'bunches') return 'bunch';
+  if (x === 'loaves') return 'loaf';
   return x;
 }
 
@@ -607,6 +615,16 @@ export class MockAIService implements AIService {
   private respond(text: string, ctx: ChatContext): AIResponse {
     const trimmed = text.trim();
     if (!trimmed) return reply(`Say something — like "get rice" or "show list".`);
+    return this.understood(trimmed, ctx) ?? this.unknownItem(trimmed) ?? notUnderstood();
+  }
+
+  /**
+   * What the rules recognise for sure — a known product, a pantry phrase, a list command, an
+   * answer to a pending question — or null. HybridAIService asks the LLM only when this is null.
+   */
+  understood(text: string, ctx: ChatContext): AIResponse | null {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
 
     // Before clarifications, so "no, seeds not powder" isn't swallowed as a free-text brand answer.
     const corrected = handleCorrection(trimmed, ctx);
@@ -628,12 +646,34 @@ export class MockAIService implements AIService {
     const purchased = handleMarkPurchased(trimmed, ctx);
     if (purchased) return purchased;
 
-    const add = handleAddItems(trimmed, ctx);
-    if (add) return add;
+    return handleAddItems(trimmed, ctx);
+  }
 
-    const unknown = handleUnknownItem(trimmed);
-    if (unknown) return unknown;
-
-    return reply(`I didn't catch that — could you say it another way? (Try "get tomatoes" or "rice is almost finished".)`);
+  /** "get harpic": a product the catalog doesn't know — ask its section. */
+  unknownItem(text: string): AIResponse | null {
+    return handleUnknownItem(text.trim());
   }
 }
+
+/**
+ * Does the message name more than one different product ("tamatar aur dahi")? The rules
+ * handle one item per message, so HybridAIService lets the LLM split these first.
+ * Leaves / seeds / powder of "coriander" count as one.
+ */
+export function namesSeveralProducts(text: string, ctx: ChatContext): boolean {
+  const t = norm(text);
+  const words = new Set(t.split(/\s+/));
+  const keys = new Set<string>();
+  for (const a of ctx.aliases) {
+    const al = norm(a.alias);
+    if (al.includes(' ') ? t.includes(al) : words.has(al)) keys.add(a.disambiguationGroup ?? a.productId);
+  }
+  // "coriander seeds" also contains "coriander": a product and its own group are one thing.
+  for (const a of ctx.aliases) if (a.disambiguationGroup && keys.has(a.disambiguationGroup)) keys.delete(a.productId);
+  return keys.size > 1;
+}
+
+export const notUnderstood = (): AIResponse =>
+  reply(`I didn't catch that — could you say it another way? (Try "get tomatoes" or "rice is almost finished".)`);
+
+export { noteReopen };

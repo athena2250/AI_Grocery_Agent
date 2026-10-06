@@ -8,6 +8,7 @@ import { useAuth } from '../state/AuthContext';
 import { useUI } from '../components/UIProvider';
 import { Button, Chip, Sheet } from '../components/hearth';
 import { getAuthService } from '../services/serviceFactory';
+import { isOnline } from '../services/api';
 import { OTP_LENGTH, RELATIONS, clock, type AuthError, type AuthMode } from '../state/auth';
 import { COUNTRIES, INDIA, formatPhone, localDigits, toE164, type Country } from '../state/phone';
 
@@ -30,7 +31,7 @@ interface Sent {
  * code is shown on screen; Phase 2's service texts it instead.
  */
 export function AuthScreen() {
-  const { signIn } = useAuth();
+  const { signIn, endedBecause } = useAuth();
   const { flash } = useUI();
 
   const [step, setStep] = useState<Step>('start');
@@ -40,6 +41,7 @@ export function AuthScreen() {
   const [otherRelation, setOtherRelation] = useState(false);
   const [country, setCountry] = useState<Country>(INDIA);
   const [digits, setDigits] = useState('');
+  const [homeCode, setHomeCode] = useState('');
   const [picking, setPicking] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; relation?: string; phone?: string }>({});
   const [formError, setFormError] = useState<{ error: AuthError; message: string } | null>(null);
@@ -76,7 +78,7 @@ export function AuthScreen() {
     if (Object.keys(errs).length || !phone || phone === 'invalid') return;
 
     setBusy(true);
-    const r = await auth.requestOtp({ mode, name, phone, relation: mode === 'sign_up' ? relation : undefined });
+    const r = await auth.requestOtp({ mode, name, phone, relation: mode === 'sign_up' ? relation : undefined, inviteCode: mode === 'sign_up' ? homeCode : undefined });
     setBusy(false);
     if (!r.ok) {
       // Still waiting out the resend timer for this number — go back to the code.
@@ -94,7 +96,7 @@ export function AuthScreen() {
   const resend = async () => {
     if (!sent) return;
     setBusy(true);
-    const r = await auth.requestOtp({ mode, name, phone: sent.phone, relation: mode === 'sign_up' ? relation : undefined });
+    const r = await auth.requestOtp({ mode, name, phone: sent.phone, relation: mode === 'sign_up' ? relation : undefined, inviteCode: mode === 'sign_up' ? homeCode : undefined });
     setBusy(false);
     if (!r.ok) { setCodeError(r.message); return; }
     setSent({ ...sent, expiresAt: r.expiresAt, resendAt: r.resendAt, devCode: r.devCode });
@@ -113,14 +115,14 @@ export function AuthScreen() {
     if (!r.ok) {
       setCode('');
       setCodeError(r.attemptsLeft ? `${r.message} ${r.attemptsLeft} ${r.attemptsLeft === 1 ? 'try' : 'tries'} left.` : r.message);
-      if (r.error === 'account_exists' || r.error === 'no_account') {
+      if (['account_exists', 'no_account', 'invalid_invite', 'phone_in_other_home'].includes(r.error)) {
         setFormError({ error: r.error, message: r.message });
         setStep('form');
       }
       return;
     }
     flash(r.created ? `Welcome to Hearth, ${r.account.name}` : `Welcome back, ${r.account.name}`, c.accent);
-    signIn(r.account);
+    signIn(r.account, { token: r.token, created: r.created });
   };
 
   const onCode = (v: string) => {
@@ -138,6 +140,11 @@ export function AuthScreen() {
           <View style={styles.rule} />
           <Text style={styles.brand}>Hearth</Text>
           <Text style={styles.tagline}>Everything your family needs to remember, kept in one calm and considered place.</Text>
+          {endedBecause ? (
+            <View style={[styles.notice, { marginTop: 24 }]}>
+              <Text style={styles.noticeText}>{endedBecause} Please sign in again.</Text>
+            </View>
+          ) : null}
           <View style={{ flex: 1 }} />
           <Button label="Create an account" onPress={() => open('sign_up')} />
           <Button label="I already have an account" kind="outline" onPress={() => open('sign_in')} style={{ marginTop: 10 }} />
@@ -260,6 +267,23 @@ export function AuthScreen() {
               </View>
               {fieldErrors.phone ? <Text style={styles.error}>{fieldErrors.phone}</Text> : null}
 
+              {signingUp && isOnline() ? (
+                <>
+                  <Text style={styles.label}>HOME CODE · IF YOUR FAMILY IS ALREADY ON HEARTH</Text>
+                  <TextInput
+                    value={homeCode}
+                    onChangeText={(v) => setHomeCode(v.toUpperCase())}
+                    placeholder="e.g. HRTH-4K9P"
+                    placeholderTextColor={c.textFaint}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    maxLength={12}
+                    style={styles.input}
+                  />
+                  <Text style={styles.hint}>Leave it empty to start a new home. Anyone in the home can make a code from More → Invite family.</Text>
+                </>
+              ) : null}
+
               {formError ? (
                 <View style={styles.notice}>
                   <Text style={styles.noticeText}>{formError.message}</Text>
@@ -376,6 +400,7 @@ const styles = StyleSheet.create({
   },
   inputError: { borderColor: c.red },
   error: { fontFamily: f.sans, fontSize: 13, lineHeight: 18, color: c.red, marginTop: 6 },
+  hint: { fontFamily: f.sans, fontSize: 13, lineHeight: 18, color: c.textMuted, marginTop: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', marginTop: -8 },
   phoneRow: { flexDirection: 'row', gap: 8 },
   country: {

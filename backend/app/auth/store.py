@@ -521,3 +521,52 @@ def purge(s: Session, now: datetime) -> dict[str, int]:
     )))
     events = s.execute(delete(AuthEvent).where(col(AuthEvent.at) < now - EVENT_RETENTION))
     return {"otp_code": codes.rowcount, "auth_event": events.rowcount}  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------- account deletion
+
+DELETED_NAME = "Former member"
+
+
+def delete_account(s: Session, *, member_id: str, now: datetime) -> bool:
+    """"Delete my account" (App Store / Play rule). The row stays for the home's history
+    (who added what) but no longer names or reaches the person: name, relation and number
+    are cleared, every session ends, and their codes and logged numbers go. An owner's role
+    passes to the longest-standing member left. Returns True when nobody is left in the home,
+    so the caller can drop the home's shared data too.
+    """
+
+    now = as_utc(now)
+    member = s.get(Member, member_id)
+    if member is None or not member.is_active:
+        _refuse(s, now, "not_allowed")
+    assert member is not None
+    revoke_member_sessions(s, member.id, now, SessionEndReason.REMOVED)
+    if member.phone:
+        s.execute(delete(OtpCode).where(col(OtpCode.phone) == member.phone))
+    for ev in s.exec(select(AuthEvent).where(
+            or_(col(AuthEvent.member_id) == member.id, col(AuthEvent.phone) == member.phone))):
+        ev.phone = None
+        s.add(ev)
+    was_owner = member.role is MemberRole.OWNER
+    member.name, member.relation, member.phone = DELETED_NAME, None, None
+    member.is_active = False
+    member.role = MemberRole.MEMBER
+    s.add(member)
+    s.flush()
+
+    others = s.exec(
+        select(Member).where(Member.household_id == member.household_id, col(Member.is_active).is_(True))
+        .order_by(col(Member.created_at))
+    ).all()
+    if was_owner and others:
+        others[0].role = MemberRole.OWNER
+        s.add(others[0])
+    if not others:
+        for inv in s.exec(select(HouseholdInvite).where(
+                HouseholdInvite.household_id == member.household_id, col(HouseholdInvite.revoked_at).is_(None))):
+            inv.revoked_at = now
+            s.add(inv)
+    _log(s, AuthEventKind.SESSIONS_REVOKED, now, household_id=member.household_id,
+         member=member, reason="account_deleted")
+    return not others

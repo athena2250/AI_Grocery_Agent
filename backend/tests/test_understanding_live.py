@@ -1,6 +1,6 @@
-"""Live eval — hits a real local Ollama.
+"""Live eval — hits a real Ollama (OLLAMA_HOST, OLLAMA_MODEL).
 
-Run with:  `pytest -m llm backend/tests/test_understanding_live.py`
+Run with:  `OLLAMA_MODEL=llama3:8b pytest -m llm -s backend/tests/test_understanding_live.py`
 
 Reads `tests/eval/utterances.yaml`, runs each utterance through the extractor,
 and enforces ≥90% pass across all assertions.
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.understanding import UnderstandingClient
+from app.understanding.llm import client_from_env
 from app.understanding.schema import LLMExtraction
 
 pytestmark = pytest.mark.llm
@@ -74,7 +74,7 @@ async def test_live_eval_pass_rate() -> None:
         pytest.skip("Ollama not reachable at http://localhost:11434")
 
     cases = _load_cases()
-    client = UnderstandingClient()
+    client = client_from_env()
 
     passes = 0
     reports: list[str] = []
@@ -93,6 +93,7 @@ async def test_live_eval_pass_rate() -> None:
 
     rate = passes / len(cases)
     detail = "\n".join(reports) if reports else "(all passed)"
+    print(f"\nlive eval: {passes}/{len(cases)} passed ({rate:.0%})\n{detail}")
     assert rate >= _PASS_THRESHOLD, (
         f"live eval pass rate {rate:.0%} < {_PASS_THRESHOLD:.0%} ({passes}/{len(cases)})\n{detail}"
     )
