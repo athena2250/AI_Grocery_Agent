@@ -42,7 +42,7 @@ A functional Expo (React Native + TypeScript) app on the user's phone that prove
 **Framework choice:** Expo/React Native over Flutter — installs on the phone via "Expo Go" + QR code (no Xcode/Android Studio), JS/TS matches the future HTTP backend cleanly, chat UIs are trivial in RN.
 
 **Sandbox scope (in):**
-- UI follows the "Hearth" family-journal design (`Hearth.html`): onboarding → bottom tabs Home · Tasks · (+) · Groceries · More. The + opens an Add task form (`AddSheet`: task · section · additional information → "Fill with Hearth AI"); Groceries hand off to "Type or speak" (`ComposeSheet`), which runs the AI turn and shows clarification chips inline, while other sections are filled by `state/tasks.ts` `fillTask` and saved to the Tasks tab; More holds Conversation, Pantry, Memory, History.
+- UI follows the "Hearth" family-journal design (`Hearth.html`): onboarding → bottom tabs Home · Tasks · (+) · Groceries · More. The + asks **Groceries or Task**: Groceries opens Add item (`AddItemSheet`, which links to "Type or speak" — `ComposeSheet`, which runs the AI turn and shows clarification chips inline); Task opens Add task (`AddTaskSheet`), two pages like Add item: what needs doing → identified from the task catalog (`data/taskCatalog.ts`, `state/identifyTask.ts`) → the fields that kind needs, mirrored from backend `POST_KIND_FIELDS` (`state/taskFields.ts`), with an Apple-Reminders-style deadline (date + optional time, `components/DeadlinePicker.tsx`). "Type or speak" takes groceries and tasks in one message (`state/splitMessage.ts`). Task memory (`state/taskMemory.ts`) only marks who usually does a task, learned on Save. A finished task stays on the board 3 days, then moves to Task history (More, admin/owner only); tasks saved before fields existed get 3 days from the upgrade. More holds Conversation, Pantry, Memory, History, Task history.
 - Conversation screen with bubbles + quick-reply chips for clarifications.
 - List screen grouped by category, with Item Detail modal showing product/qty/brand/variant/confidence/rationale/source.
 - Pantry (Available / Running low / Out of stock).
@@ -78,7 +78,7 @@ AI_Grocery_Agent/
 │   ├── package.json / tsconfig.json / app.json
 │   └── src/
 │       ├── navigation/
-│       ├── screens/          # Onboarding, Home, Tasks, List (Groceries), More, Chat (Conversation), Pantry, Memory, History, AddSheet, ComposeSheet, ItemDetailModal
+│       ├── screens/          # Onboarding, Home, Tasks, List (Groceries), More, Chat (Conversation), Pantry, Memory, History, TaskHistory, AddItemSheet, AddTaskSheet, ComposeSheet, ItemDetailModal
 │       ├── components/       # ChatBubble, QuickReplyChip, ItemRow, ConfidenceDot
 │       ├── state/            # HouseholdContext + AsyncStorage persistence
 │       ├── services/         # AIService interface + MockAIService + HttpAIService stub + factory
@@ -114,7 +114,7 @@ Every `ProposedItem` carries `confidence` (high/medium/low), `source` (user / ho
 
 ## Data model (Phase 1 in TypeScript; Phase 2 mirrors this in SQL)
 
-Full schema (32 tables: people, catalog, feed, conversation, grocery, tasks, bills): `docs/DATABASE.md`. Create + seed with `cd backend && .venv/bin/python -m app.seed`.
+Full schema (36 tables: people, sign-in, catalog, feed, conversation, grocery, tasks, bills): `docs/DATABASE.md`. Create + seed with `cd backend && .venv/bin/python -m app.seed`.
 
 Grocery entities: `Product`, `ProductAlias` (with `disambiguationGroup` for cases like coriander), `Preference` (household memory), `InventoryEntry`, `ListItem`, `Purchase`, `Turn` (conversation log).
 

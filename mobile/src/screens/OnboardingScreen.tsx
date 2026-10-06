@@ -9,27 +9,14 @@ import { Avatar, Button, CheckCircle } from '../components/hearth';
 const c = theme.colors;
 const f = theme.font;
 
-/** Welcome → Who lives here? → What should we help with? (Hearth.html onboarding). */
+/**
+ * Who lives here? → What should we help with? (Hearth.html onboarding). Runs
+ * after sign-up, so the signed-in person is already in the list as "me".
+ */
 export function OnboardingScreen() {
   const { profile, toggleMember, addMember, toggleManage, finishOnboarding } = useProfile();
   const { flash } = useUI();
-  const [step, setStep] = useState<'welcome' | 'who' | 'manage'>('welcome');
-
-  if (step === 'welcome') {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.welcome}>
-          <Text style={styles.est}>EST. AT HOME</Text>
-          <View style={styles.rule} />
-          <Text style={styles.brand}>Hearth</Text>
-          <Text style={styles.tagline}>Everything your family needs to remember, kept in one calm and considered place.</Text>
-          <View style={{ flex: 1 }} />
-          <Button label="Set up your home" onPress={() => setStep('who')} />
-          <Text style={styles.fine}>Under a minute · no account needed</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const [step, setStep] = useState<'who' | 'manage'>('who');
 
   const finish = () => {
     finishOnboarding();
@@ -49,14 +36,18 @@ export function OnboardingScreen() {
         {step === 'who' ? (
           <>
             <Text style={styles.h1}>Who lives here?</Text>
-            <Text style={styles.lede}>Add the people in your home. The first person ticked is you.</Text>
+            <Text style={styles.lede}>You’re in already. Tick everyone else who lives with you.</Text>
             <View style={styles.list}>
               {profile.members.map((m, i) => (
-                <Pressable key={m.id} onPress={() => toggleMember(i)} style={styles.row}>
+                <Pressable
+                  key={m.id}
+                  onPress={() => (m.id === profile.meId ? flash('That’s you — you’re always in', c.accent) : toggleMember(i))}
+                  style={styles.row}
+                >
                   <Avatar initial={m.name[0]} color={m.color} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowName}>{m.name}</Text>
-                    <Text style={styles.rowMeta}>{m.relation}</Text>
+                    <Text style={styles.rowMeta}>{m.id === profile.meId ? `You · ${m.relation}` : m.relation}</Text>
                   </View>
                   <CheckCircle on={m.on} />
                 </Pressable>
@@ -98,12 +89,6 @@ export function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: c.bg },
-  welcome: { flex: 1, paddingTop: 52, paddingHorizontal: 40, paddingBottom: 32 },
-  est: { fontFamily: f.sansBold, fontSize: 12, letterSpacing: 3, color: c.kicker },
-  rule: { width: 44, height: 1, backgroundColor: c.ink, marginTop: 16, marginBottom: 30 },
-  brand: { fontFamily: f.serif, fontSize: 64, lineHeight: 66, color: c.ink, letterSpacing: -1 },
-  tagline: { fontFamily: f.serifItalic, fontSize: 23, lineHeight: 32, color: c.textSoft, maxWidth: 280, marginTop: 22 },
-  fine: { fontFamily: f.sans, fontSize: 13, color: c.textFaint, marginTop: 16, textAlign: 'center' },
   step: { flexGrow: 1, paddingTop: 22, paddingHorizontal: theme.gutter, paddingBottom: 32 },
   progress: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 30 },
   progressNum: { fontFamily: f.sansHeavy, fontSize: 12, letterSpacing: 2, color: c.accent },

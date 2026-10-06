@@ -3,7 +3,9 @@ import { View, Text, TextInput, ScrollView, Pressable, StyleSheet, type TextInpu
 import { theme, MEMBER_COLORS } from '../theme';
 import { useHousehold } from '../state/HouseholdContext';
 import { useProfile } from '../state/ProfileContext';
-import { DIET_FLAGS, DIET_TYPES, localPhone, memberActivity, normalizePhone, phoneDigits } from '../state/profile';
+import { DIET_FLAGS, DIET_TYPES, memberActivity } from '../state/profile';
+import { formatPhone, localDigits, splitE164, toE164 } from '../state/phone';
+import { useAuth } from '../state/AuthContext';
 import { useUI } from '../components/UIProvider';
 import { SubScreen } from '../components/SubScreen';
 import { Avatar, Button, Chip, SectionHeading } from '../components/hearth';
@@ -20,6 +22,7 @@ export function ProfileScreen({ route, navigation }: { route: any; navigation: a
   const { state } = useHousehold();
   const { profile, me, ownerId, activeMembers, updateMember, setMe, makeOwner } = useProfile();
   const { flash, ask } = useUI();
+  const { account, signOut } = useAuth();
 
   const member = profile.members.find((m) => m.id === route.params?.memberId) ?? me;
   const isMe = member.id === me.id;
@@ -28,6 +31,8 @@ export function ProfileScreen({ route, navigation }: { route: any; navigation: a
   const activity = memberActivity(state, member.id);
   const others = activeMembers.filter((m) => m.id !== member.id);
 
+  // Edited in the number's own country; a blank number reads as India.
+  const { country } = splitE164(member.phone);
   const [phoneError, setPhoneError] = useState(false);
   const [allergy, setAllergy] = useState('');
   useEffect(() => { setPhoneError(false); setAllergy(''); }, [member.id]);
@@ -77,25 +82,28 @@ export function ProfileScreen({ route, navigation }: { route: any; navigation: a
         </Field>
         <Field label="Phone">
           <View style={styles.phoneWrap}>
-            <Text style={styles.prefix}>+91</Text>
+            <Text style={styles.prefix}>{country.dial}</Text>
             <DraftInput
               key={`phone_${member.id}`}
-              value={localPhone(member.phone)}
-              placeholder="10-digit mobile"
+              value={splitE164(member.phone).local}
+              placeholder={`${country.digits}-digit mobile`}
               keyboardType="number-pad"
               inputMode="numeric"
-              maxLength={10}
-              sanitize={phoneDigits}
+              maxLength={country.digits}
+              sanitize={(v) => localDigits(country, v)}
               onCommit={(v) => {
-                const n = normalizePhone(v);
+                const n = toE164(country, v);
                 setPhoneError(n === 'invalid');
                 if (n !== 'invalid') edit({ phone: n });
-                return n === 'invalid' ? v : localPhone(n);
+                return n === 'invalid' ? v : splitE164(n).local;
               }}
             />
           </View>
         </Field>
-        {phoneError ? <Text style={styles.error}>That doesn’t look like a 10-digit mobile number — not saved yet.</Text> : null}
+        {phoneError ? <Text style={styles.error}>That doesn’t look like a {country.digits}-digit mobile number — not saved yet.</Text> : null}
+        {isMe && account && member.phone !== account.phone ? (
+          <Text style={styles.hint2}>You sign in with {formatPhone(account.phone)}; this number is just for the family.</Text>
+        ) : null}
         <Field label="Colour">
           <View style={styles.swatches}>
             {MEMBER_COLORS.map((col) => (
@@ -170,6 +178,20 @@ export function ProfileScreen({ route, navigation }: { route: any; navigation: a
             {ownerId === me.id && !isOwner ? (
               <Button label={`Make ${member.name} the owner`} kind="quiet" onPress={handOver} />
             ) : null}
+          </View>
+        ) : null}
+
+        {isMe ? (
+          <View style={styles.actions}>
+            <Button
+              label="Sign out"
+              kind="accentOutline"
+              onPress={() => ask({
+                title: 'Sign out?',
+                body: 'Your home’s lists and memory stay on this phone.',
+                options: [{ label: 'Sign out', kind: 'danger', onPress: signOut }],
+              })}
+            />
           </View>
         ) : null}
 
@@ -250,6 +272,7 @@ const styles = StyleSheet.create({
   phoneWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   prefix: { fontFamily: f.serif, fontSize: 18, color: c.textFaint },
   error: { fontFamily: f.sans, fontSize: 13, color: c.red, textAlign: 'right', marginTop: -2, marginBottom: 8 },
+  hint2: { fontFamily: f.sans, fontSize: 13, color: c.textFaint, textAlign: 'right', marginTop: -2, marginBottom: 8 },
   swatches: { flexDirection: 'row', gap: 10, paddingVertical: 8 },
   swatch: { width: 24, height: 24, borderRadius: 12 },
   swatchOn: { borderWidth: 2.5, borderColor: c.ink },

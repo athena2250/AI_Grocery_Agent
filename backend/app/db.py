@@ -29,6 +29,7 @@ MODEL_MODULES = (
     "app.planner.models",
     "app.history.models",
     "app.receipts.models",
+    "app.auth.models",
 )
 
 

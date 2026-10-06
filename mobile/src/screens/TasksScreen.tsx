@@ -7,11 +7,16 @@ import { CheckIcon } from '../components/icons';
 import { useUI } from '../components/UIProvider';
 import { useProfile } from '../state/ProfileContext';
 import { useTasks, type Task } from '../state/TasksContext';
-import { SECTIONS, dueLabel } from '../state/tasks';
+import { SECTIONS, daysLeftOnBoard, dueLabel, isOverdue } from '../state/tasks';
+import { detailsLine } from '../state/taskFields';
 
 const c = theme.colors;
 
-/** Tasks tab: what the family added from +, by section; tap to tick off. */
+/**
+ * Tasks tab: what the family added from +, by section; tap to tick off. A
+ * finished task stays for KEEP_ON_BOARD_DAYS so everyone sees it, then moves to
+ * Task history.
+ */
 export function TasksScreen() {
   const { tasks, toggleTask } = useTasks();
   const { profile } = useProfile();
@@ -37,13 +42,23 @@ export function TasksScreen() {
   }
 
   const row = (t: Task) => {
-    const who = profile.members.find((m) => m.id === t.whoId)?.name;
+    const name = (id: string) => profile.members.find((m) => m.id === id)?.name;
+    const who = t.whoId ? name(t.whoId) : undefined;
+    const extra = detailsLine(t, name);
+    const late = !t.done && isOverdue(t.due);
+    const left = daysLeftOnBoard(t);
     return (
       <Pressable key={t.id} onPress={() => toggleTask(t.id)} style={styles.row}>
         <CheckCircle on={t.done} onColor={c.green} />
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, t.done && styles.done]}>{t.title}</Text>
-          <Text style={styles.meta}>{[who, dueLabel(t.due)].filter(Boolean).join(' · ')}</Text>
+          <Text style={[styles.meta, late && styles.late]}>
+            {[who, t.due === null ? null : dueLabel(t.due), late ? 'overdue' : null].filter(Boolean).join(' · ')}
+          </Text>
+          {extra ? <Text style={styles.meta}>{extra}</Text> : null}
+          {left != null ? (
+            <Text style={styles.clears}>{t.done ? 'Done' : 'Saved before task details'} · clears {left === 0 ? 'today' : `in ${left} ${left === 1 ? 'day' : 'days'}`}</Text>
+          ) : null}
           {t.notes ? <Text style={styles.notes} numberOfLines={2}>{t.notes}</Text> : null}
         </View>
       </Pressable>
@@ -72,5 +87,7 @@ const styles = StyleSheet.create({
   title: { fontFamily: theme.font.serif, fontSize: 19, color: c.ink },
   done: { color: c.textFaint, textDecorationLine: 'line-through' },
   meta: { fontFamily: theme.font.sans, fontSize: 13, color: c.textMuted, marginTop: 2 },
+  late: { color: c.red },
+  clears: { fontFamily: theme.font.sans, fontSize: 12, color: c.textFaint, marginTop: 3 },
   notes: { fontFamily: theme.font.serifItalic, fontSize: 15, color: c.textSoft, marginTop: 4 },
 });

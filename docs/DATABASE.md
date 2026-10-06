@@ -63,7 +63,7 @@ Repeated alerts ("keep reminding Dad about the plumber") are `reminder` rows on 
 fire every `interval_minutes` until the member acknowledges / finishes (`stop_on`).
 Each alert sent is a `reminder_log` row.
 
-## Tables (32)
+## Tables (36)
 
 ### People — `app/core/models.py`
 | table | purpose |
@@ -71,6 +71,18 @@ Each alert sent is a `reminder_log` row.
 | `household` | id, name, currency, timezone, monthly_grocery_budget |
 | `member` | family members; role owner/member, relation, phone (WhatsApp later) |
 | `device` | Expo push token per phone, for the pop-up |
+
+### Sign-in — `app/auth/models.py`, rules in `app/auth/store.py`
+No account table: `member` is the account, `member.phone` (unique E.164) the key. Sign-up claims a
+member row the owner already added with that phone (the typed name wins), joins via a home code, or
+starts a new household with the person as owner. One household per person.
+
+| table | purpose |
+|---|---|
+| `otp_code` | a sent code: phone, purpose sign_in/sign_up/change_phone, HMAC of the code (never the code), expires 5 min, resend after 30 s, 5 tries, pending sign-up name/relation/invite; deleted 24 h after use or expiry |
+| `auth_session` | the signed-in phone: token hash, device, last_seen; lasts until sign-out; **one active per member** (partial unique index) — signing in elsewhere revokes the old one (`replaced`) |
+| `household_invite` | home code `HRTH-XXXX`: any member makes one, 7 days, unlimited uses, revocable |
+| `auth_event` | login log: code sent/failed/locked/expired, refused (+ why), signed up/in/out, replaced, phone changed, invite created/used/revoked; kept 1 year; rate limit (5 codes/hour, 10/day per number) counts it |
 
 ### Catalog — `app/core/models.py`, `app/pricing/models.py`
 | table | purpose |
@@ -117,7 +129,10 @@ Predictions, budget estimates, price-history view — computed on read. No vecto
 ## Relationships (quick view)
 
 ```
-household 1─┬─* member 1─* device
+household 1─┬─* member 1─┬─* device
+            │            ├─* auth_session ─▶ device      (≤ 1 active)
+            │            └─* auth_event
+            ├─* household_invite ◀─ otp_code.invite_id
             ├─* post ─┬─* post_recipient ─▶ member
             │         ├─* post_comment
             │         └─* reminder ─* reminder_log
@@ -141,7 +156,7 @@ product 1─┬─* product_alias
 - Timestamps are `timestamptz`, written as UTC.
 - Enums are VARCHAR + CHECK storing the lowercase value (`draft`, not `DRAFT`); constraint name `ck_<table>_<column>`.
 - JSON columns are `jsonb` in Postgres.
-- Everything is scoped by `household_id`; auth later is middleware, not a schema change.
+- Everything is scoped by `household_id`; requests resolve `auth_session` → member → household (middleware).
 
 ## Seeded
 1 household (`h_home`), members `m_mom` / `m_dad` / `m_me` (rename freely), 5 post kinds + 29
@@ -149,7 +164,8 @@ field rules, 42 products, 98 aliases, 6 preferences, 12 purchases, 3 bill accoun
 (electricity, internet, maintenance — amounts left empty on purpose).
 
 ## Not built yet
-API endpoints for feed/tasks/bills, the reminder worker (reads `reminder` where
+`/auth` endpoints + SMS sender (the mobile app still uses its on-phone `MockAuthService`), the daily
+`auth.store.purge` job, API endpoints for feed/tasks/bills, the reminder worker (reads `reminder` where
 `active and next_fire_at <= now()`), push sending, the mobile feed/tasks/bills screens,
 recipe tables (recipes are still constants in `app/recipes/data.py`), `store` table.
 

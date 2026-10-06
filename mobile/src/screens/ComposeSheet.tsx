@@ -6,6 +6,15 @@ import { useConversation } from '../state/useConversation';
 import { Button, CheckCircle, Chip, CloseButton, Dot, Kicker, Sheet, hearthText } from '../components/hearth';
 import { MicIcon } from '../components/icons';
 import { useUI } from '../components/UIProvider';
+import { TaskFieldInput } from '../components/TaskFieldInput';
+import { useProfile } from '../state/ProfileContext';
+import { useTasks } from '../state/TasksContext';
+import { SECTIONS, dueLabel, type Section } from '../state/tasks';
+import { splitMessage } from '../state/splitMessage';
+import { draftFromText, identifyTask, withCatalog } from '../state/identifyTask';
+import { answer, draftToTask, fieldsFor as fieldsOf, isComplete, missingFields, nextQuestion, withSection, type TaskDraft } from '../state/taskFields';
+import { suggestedWho } from '../state/taskMemory';
+import type { CatalogTask } from '../data/taskCatalog';
 import type { Turn } from '../types';
 
 const EXAMPLES = [
@@ -13,21 +22,42 @@ const EXAMPLES = [
   "tomatoes I don't know how much",
   'rice is almost finished',
   'the usual biscuits',
+  'call the plumber tomorrow',
+  'pay the current bill by Friday',
 ];
+
+const TASK_SECTIONS = SECTIONS.filter((s) => s !== 'Groceries');
+
+/** A task found in the message, filled in here one question at a time. */
+interface TaskCard {
+  id: string;
+  text: string;
+  candidates: CatalogTask[];
+  guess?: Section;
+  draft: TaskDraft;
+  /** Field being asked now; it stays until she taps Next, so typing an amount doesn't skip ahead. */
+  asking: string | null;
+  on: boolean;
+}
 
 const c = theme.colors;
 
 /**
- * "Type or speak" (Hearth.html's NL sheet), driven by the real AI service.
- * Input → "Does this look right?": the agent's reply with its clarification
- * chips, and the items this session put on the draft list. Mom can untick any
- * before saving; unticked ones are removed. Nothing is invented here — every
- * item and question comes from the same pipeline as the conversation screen.
+ * "Type or speak" (Hearth.html's NL sheet) for groceries and tasks together.
+ * `splitMessage` sends the grocery part through the AI service (the same
+ * pipeline as the conversation screen) and turns each task part into a task
+ * draft that asks one question at a time (backend `post_kind_field` order).
+ * Input → "Does this look right?": the agent's reply with its chips, the items
+ * this session put on the list, and the tasks. Mom can untick any before
+ * saving; nothing is invented, and a ticked task must be complete to save.
  */
 export function ComposeSheet({ seed, onClose }: { seed: string; onClose: () => void }) {
   const { state, removeItem } = useHousehold();
   const { send, busy, liveChipTurnIds } = useConversation();
   const { flash } = useUI();
+  const { me, activeMembers } = useProfile();
+  const { addTask, taskPrefs } = useTasks();
+  const [cards, setCards] = useState<TaskCard[]>([]);
   const [phase, setPhase] = useState<'input' | 'result'>('input');
   const [text, setText] = useState(seed);
   const [reply, setReply] = useState('');
@@ -52,15 +82,51 @@ export function ComposeSheet({ seed, onClose }: { seed: string; onClose: () => v
   const understand = async (msg: string, clarificationId?: string) => {
     if (!msg.trim()) return;
     setVoiceHint(false);
-    const r = await send(msg, clarificationId);
-    if (r) { setPhase('result'); setText(''); setReply(''); }
+    if (clarificationId) {
+      if (await send(msg, clarificationId)) setPhase('result');
+      return;
+    }
+    const split = splitMessage(msg, state);
+    if (split.tasks.length) {
+      const found = split.tasks.map((t, i): TaskCard => {
+        const m = identifyTask(t);
+        const draft = draftFromText(t, activeMembers, me.id);
+        return {
+          id: `${Date.now()}_${i}`, text: t, candidates: m?.candidates ?? [], draft,
+          ...(m?.guess ? { guess: m.guess } : {}), asking: nextQuestion(draft)?.key ?? null, on: true,
+        };
+      });
+      setCards((prev) => [...prev, ...found]);
+    }
+    const r = split.grocery ? await send(split.grocery) : null;
+    if (r || split.tasks.length) { setPhase('result'); setText(''); setReply(''); }
   };
 
+  const updateCard = (id: string, fn: (card: TaskCard) => TaskCard) =>
+    setCards((prev) => prev.map((k) => (k.id === id ? fn(k) : k)));
+  /** New draft for a card: keep asking the same field until it's answered, then move on. */
+  const setDraft = (id: string, fn: (d: TaskDraft) => TaskDraft, advance = false) => updateCard(id, (k) => {
+    const draft = fn(k.draft);
+    return { ...k, draft, asking: (!advance && k.asking) || (nextQuestion(draft)?.key ?? null) };
+  });
+
+  const tickedTasks = cards.filter((k) => k.on);
+  const openTasks = tickedTasks.filter((k) => !isComplete(k.draft)).length;
+
   const save = () => {
+    if (openTasks) return;
     excluded.forEach((id) => removeItem(id));
+    for (const k of tickedTasks) {
+      const t = draftToTask(k.draft);
+      if (t) addTask(t);
+    }
     onClose();
-    if (keepCount > 0) flash(`Added ${keepCount} to groceries`);
-    else if (newItems.length > 0) flash('Nothing added', c.amber);
+    const parts = [
+      keepCount ? `${keepCount} to groceries` : '',
+      tickedTasks.length ? `${tickedTasks.length} ${tickedTasks.length === 1 ? 'task' : 'tasks'}` : '',
+    ].filter(Boolean);
+    if (parts.length) flash(`Added ${parts.join(' · ')}`);
+    else if (newItems.length || cards.length) flash('Nothing added', c.amber);
   };
 
   const toggle = (id: string) => setExcluded((prev) => {
@@ -92,6 +158,62 @@ export function ComposeSheet({ seed, onClose }: { seed: string; onClose: () => v
       </View>
     );
   };
+
+  const renderCard = (k: TaskCard) => {
+    const d = k.draft;
+    const q = d.section ? nextQuestionFor(k) : null;
+    const done = isComplete(d);
+    const who = activeMembers.find((m) => m.id === d.whoId)?.name;
+    const pick = (entry: CatalogTask) => setDraft(k.id, (x) => withCatalog(withSection(x, entry.section), entry), true);
+    return (
+      <View key={k.id} style={styles.task}>
+        <Pressable onPress={() => updateCard(k.id, (x) => ({ ...x, on: !x.on }))} style={styles.taskHead}>
+          <CheckCircle on={k.on} onColor={c.green} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.itemName, !k.on && { color: c.textFaint }]}>{d.title}</Text>
+            <Text style={hearthText.catLabel}>
+              {[d.section ?? 'Which kind?', done ? [who, d.due === undefined ? null : dueLabel(d.due)].filter(Boolean).join(' · ') : null].filter(Boolean).join('  ·  ')}
+            </Text>
+          </View>
+        </Pressable>
+        {k.on && !d.section && (
+          <View style={styles.taskBody}>
+            <Text style={styles.taskQ}>{k.candidates.length > 1 ? 'Which one?' : 'Which section is it?'}</Text>
+            <View style={styles.chips}>
+              {k.candidates.length > 1
+                ? k.candidates.map((e) => <Chip key={e.id} label={e.name} onPress={() => pick(e)} />)
+                : TASK_SECTIONS.map((sec) => (
+                  <Chip key={sec} label={sec} suggested={k.guess === sec} onPress={() => setDraft(k.id, (x) => withSection(x, sec), true)} />
+                ))}
+            </View>
+          </View>
+        )}
+        {k.on && q && (
+          <View style={styles.taskBody}>
+            <Text style={styles.taskQ}>{q.question}</Text>
+            <TaskFieldInput
+              field={q}
+              draft={d}
+              onAnswer={(v) => setDraft(k.id, (x) => answer(x, q, v), q.type === 'member')}
+              members={activeMembers}
+              meId={me.id}
+              suggestedWhoId={suggestedWho(taskPrefs, d, activeMembers.map((m) => m.id))}
+            />
+            {q.type !== 'member' && (
+              <Button label={missingFields(d).some((fl) => fl.key !== q.key) ? 'Next ›' : 'Done ✓'} kind="outline" compact onPress={() => setDraft(k.id, (x) => x, true)} style={{ marginTop: 10, alignSelf: 'flex-start' }} />
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  /** The field this card is asking: the one held open, else the next missing. */
+  const nextQuestionFor = (k: TaskCard) => {
+    const held = k.asking ? fieldsForCard(k).find((fl) => fl.key === k.asking) : undefined;
+    return held ?? nextQuestion(k.draft);
+  };
+  const fieldsForCard = (k: TaskCard) => (k.draft.section ? fieldsOf(k.draft) : []);
 
   const inputFooter = (
     <View style={styles.row}>
@@ -131,9 +253,13 @@ export function ComposeSheet({ seed, onClose }: { seed: string; onClose: () => v
       <Button
         kind="accent"
         onPress={save}
-        label={newItems.length === 0 ? 'Done'
-          : keepCount === newItems.length ? `Save all ${keepCount} ${keepCount === 1 ? 'item' : 'items'}`
-            : `Save ${keepCount} of ${newItems.length}`}
+        disabled={openTasks > 0}
+        label={openTasks ? `Answer ${openTasks === 1 ? 'the task' : `${openTasks} tasks`} first`
+          : newItems.length === 0 && tickedTasks.length === 0 ? 'Done'
+            : `Save ${[
+              newItems.length ? `${keepCount} of ${newItems.length} ${newItems.length === 1 ? 'item' : 'items'}` : '',
+              tickedTasks.length ? `${tickedTasks.length} ${tickedTasks.length === 1 ? 'task' : 'tasks'}` : '',
+            ].filter(Boolean).join(' · ')}`}
       />
     </View>
   );
@@ -204,6 +330,13 @@ export function ComposeSheet({ seed, onClose }: { seed: string; onClose: () => v
             </View>
           )}
 
+          {cards.length > 0 && (
+            <View style={{ marginTop: 18 }}>
+              <Kicker style={styles.kicker}>Tasks</Kicker>
+              {cards.map(renderCard)}
+            </View>
+          )}
+
           <Button label="← Say something else" kind="quiet" onPress={() => setPhase('input')} style={{ marginTop: 10, paddingVertical: 12 }} />
         </View>
       )}
@@ -231,6 +364,10 @@ const styles = StyleSheet.create({
   agentBlock: { marginTop: 6, marginBottom: 6 },
   agentText: { fontFamily: theme.font.serif, fontSize: 22, lineHeight: 28, color: c.ink, letterSpacing: -0.2 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
+  task: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.hairline },
+  taskHead: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 2 },
+  taskBody: { marginTop: 10, marginLeft: 40 },
+  taskQ: { fontFamily: theme.font.serif, fontSize: 19, lineHeight: 25, color: c.ink, marginBottom: 6 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 2, borderTopWidth: 1, borderTopColor: c.hairline },
   itemName: { fontFamily: theme.font.serif, fontSize: 19, color: c.ink },
   itemAmount: { fontFamily: theme.font.sans, fontSize: 14, color: c.textMuted },

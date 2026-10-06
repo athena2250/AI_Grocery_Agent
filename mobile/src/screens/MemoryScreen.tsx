@@ -3,6 +3,9 @@ import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { theme } from '../theme';
 import { useHousehold } from '../state/HouseholdContext';
 import { useUI } from '../components/UIProvider';
+import { useProfile } from '../state/ProfileContext';
+import { useTasks } from '../state/TasksContext';
+import { usualFor } from '../state/taskMemory';
 import { ConfidenceDot } from '../components/ConfidenceDot';
 import { SubScreen } from '../components/SubScreen';
 import { EmptyState, SectionHeading } from '../components/hearth';
@@ -27,6 +30,9 @@ interface MemoryRow {
 export function MemoryScreen() {
   const { state, forgetPreference, forgetAliasPreference } = useHousehold();
   const { ask } = useUI();
+  const { profile, activeMembers } = useProfile();
+  const { taskPrefs, forgetTaskPref } = useTasks();
+  const memberName = (id: string) => profile.members.find((m) => m.id === id)?.name ?? 'someone';
   const productName = (id: string) => state.products.find((p) => p.id === id)?.name ?? id;
   const now = new Date();
 
@@ -59,9 +65,30 @@ export function MemoryScreen() {
     onForget: () => forgetAliasPreference(a.disambiguationGroup),
   }));
 
+  // Tasks: who usually does what. Confidence = share of saves that went to the most-chosen person.
+  const doers: MemoryRow[] = taskPrefs.map((p) => {
+    const counts = Object.entries(p.counts).sort((a, b) => b[1] - a[1]);
+    const total = counts.reduce((n, [, k]) => n + k, 0);
+    const usual = usualFor(p, activeMembers.map((m) => m.id));
+    return {
+      key: `task_${p.key}`,
+      title: p.label,
+      meta: usual
+        ? `usually ${memberName(usual)}`
+        : `not sure yet — ${counts.map(([id, k]) => `${memberName(id)} ${k}×`).join(', ')}`,
+      confidence: total ? counts[0][1] / total : 0,
+      stale: false,
+      lastConfirmedAt: p.lastConfirmedAt,
+      timesConfirmed: total,
+      timesOverridden: total - (counts[0]?.[1] ?? 0),
+      onForget: () => forgetTaskPref(p.key),
+    };
+  });
+
   const sections = [
     { title: 'Your usuals', data: usuals },
     { title: 'What you mean by…', data: meanings },
+    { title: 'Who usually does it', data: doers },
   ].filter((s) => s.data.length > 0);
 
   const forget = (row: MemoryRow) => ask({

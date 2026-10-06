@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MEMBER_COLORS } from '../theme';
-import { DEFAULT_PROFILE, currentMe, migrateProfile, newMember, type Member, type Profile } from './profile';
+import { DEFAULT_PROFILE, currentMe, linkAccount, migrateProfile, newMember, type Member, type Profile } from './profile';
+import type { Account } from './auth';
 
 export type { Member, ManageArea, Profile } from './profile';
 export { DEFAULT_PROFILE } from './profile';
@@ -40,6 +41,8 @@ interface Ctx {
   setMe: (id: string) => void;
   /** The owner passes ownership on (backend role owner → member). */
   makeOwner: (id: string) => void;
+  /** The signed-in account becomes "me" (see profile.linkAccount). */
+  linkAccount: (account: Account) => void;
   resetProfile: () => Promise<void>;
 }
 
@@ -100,6 +103,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const makeOwner = useCallback((id: string) => setProfile((p) => ({ ...p, ownerId: id })), []);
 
+  const link = useCallback((account: Account) => setProfile((p) => linkAccount(p, account)), []);
+
   const resetProfile = useCallback(async () => {
     await AsyncStorage.removeItem(KEY).catch(() => {});
     setProfile(DEFAULT_PROFILE);
@@ -109,9 +114,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     const activeMembers = profile.members.filter((m) => m.on);
     return {
       profile, hydrated, me: currentMe(profile), ownerId: profile.ownerId, activeMembers,
-      toggleMember, addMember, toggleManage, finishOnboarding, updateMember, setMe, makeOwner, resetProfile,
+      toggleMember, addMember, toggleManage, finishOnboarding, updateMember, setMe, makeOwner, linkAccount: link, resetProfile,
     };
-  }, [profile, hydrated, toggleMember, addMember, toggleManage, finishOnboarding, updateMember, setMe, makeOwner, resetProfile]);
+  }, [profile, hydrated, toggleMember, addMember, toggleManage, finishOnboarding, updateMember, setMe, makeOwner, link, resetProfile]);
 
   return <ProfileCtx.Provider value={value}>{children}</ProfileCtx.Provider>;
 }

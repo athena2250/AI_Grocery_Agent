@@ -3,7 +3,7 @@ import { Animated, Text, View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../theme';
 import { Button, Dot, Sheet } from './hearth';
-import { AddSheet } from '../screens/AddSheet';
+import { AddTaskSheet } from '../screens/AddTaskSheet';
 import { ComposeSheet } from '../screens/ComposeSheet';
 import { AddItemSheet } from '../screens/AddItemSheet';
 
@@ -26,10 +26,13 @@ interface AskArgs {
 interface Ctx {
   flash: (msg: string, dot?: string) => void;
   ask: (a: AskArgs) => void;
+  /** The + : asks Groceries or Task, then opens that sheet. */
   openAdd: () => void;
   openCompose: (seed?: string) => void;
   /** "Add groceries": one item, identified from the catalog, then its details. */
   openAddItem: (seed?: string) => void;
+  /** "Add task": what needs doing, identified from the task catalog, then its fields. */
+  openAddTask: (seed?: string) => void;
 }
 
 const UICtx = createContext<Ctx | null>(null);
@@ -40,7 +43,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   const [anim] = useState(() => new Animated.Value(0));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [asking, setAsking] = useState<AskArgs | null>(null);
-  const [sheet, setSheet] = useState<'add' | 'compose' | 'item' | null>(null);
+  const [sheet, setSheet] = useState<'pick' | 'add' | 'compose' | 'item' | null>(null);
   const [seed, setSeed] = useState('');
   const sheetRef = useRef(sheet);
   useEffect(() => { sheetRef.current = sheet; }, [sheet]);
@@ -57,8 +60,8 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const ask = useCallback((a: AskArgs) => setAsking(a), []);
-  const openAdd = useCallback(() => setSheet('add'), []);
-  const switchTo = useCallback((next: 'compose' | 'item', s?: string) => {
+  const openAdd = useCallback(() => setSheet('pick'), []);
+  const switchTo = useCallback((next: 'add' | 'compose' | 'item', s?: string) => {
     setSeed(s ?? '');
     // iOS drops a modal presented while another is still dismissing — let the open sheet go first.
     if (sheetRef.current && sheetRef.current !== next) {
@@ -70,15 +73,26 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const openCompose = useCallback((s?: string) => switchTo('compose', s), [switchTo]);
   const openAddItem = useCallback((s?: string) => switchTo('item', s), [switchTo]);
+  const openAddTask = useCallback((s?: string) => switchTo('add', s), [switchTo]);
   const close = useCallback(() => setSheet(null), []);
 
-  const value = useMemo(() => ({ flash, ask, openAdd, openCompose, openAddItem }), [flash, ask, openAdd, openCompose, openAddItem]);
+  const value = useMemo(
+    () => ({ flash, ask, openAdd, openCompose, openAddItem, openAddTask }),
+    [flash, ask, openAdd, openCompose, openAddItem, openAddTask],
+  );
 
   return (
     <UICtx.Provider value={value}>
       {children}
 
-      <AddSheet visible={sheet === 'add'} onClose={close} onCompose={openCompose} onAddItem={openAddItem} />
+      <Sheet visible={sheet === 'pick'} onClose={close} title="What would you like to add?">
+        <View style={{ gap: 10, marginTop: 6 }}>
+          <Button label="Groceries" kind="accent" onPress={() => openAddItem()} />
+          <Button label="Task" kind="ink" onPress={() => openAddTask()} />
+          <Button label="Cancel" kind="quiet" onPress={close} />
+        </View>
+      </Sheet>
+      {sheet === 'add' && <AddTaskSheet seed={seed} onClose={close} />}
       {sheet === 'compose' && <ComposeSheet seed={seed} onClose={close} />}
       {sheet === 'item' && <AddItemSheet seed={seed} onClose={close} />}
 

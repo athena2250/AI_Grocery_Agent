@@ -1,5 +1,7 @@
 import type { HouseholdState } from '../types';
 import { MEMBER_COLORS } from '../theme';
+import { INDIA, localDigits, splitE164, toE164 } from './phone';
+import { nameKey, type Account } from './auth';
 
 /**
  * Who lives here, what Hearth helps with, and who is holding this phone. Pure
@@ -73,31 +75,14 @@ export const DEFAULT_PROFILE: Profile = {
   ownerId: null,
 };
 
-/**
- * Indian mobile number → E.164. Accepts spaces, dashes, a leading 0 or +91/91.
- * Returns null for blank input and 'invalid' when it isn't 10 digits.
- */
-export function normalizePhone(input: string): string | null | 'invalid' {
-  let d = input.replace(/[^\d]/g, '');
-  if (!d) return null;
-  if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
-  else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
-  return /^[6-9]\d{9}$/.test(d) ? `+91${d}` : 'invalid';
-}
+/** Indian mobile number → E.164 (India-only shorthands kept for older callers; see ./phone). */
+export const normalizePhone = (input: string) => toE164(INDIA, input);
 
-/** `+919876543210` → `9876543210` (the part after the fixed +91). */
-export const localPhone = (e164: string | null) => (e164 ? e164.slice(3) : '');
+/** `+919876543210` → `9876543210` (the part after the dial code). */
+export const localPhone = (e164: string | null) => splitE164(e164).local;
 
-/**
- * What the phone field keeps as you type: digits only, at most 10. A pasted
- * `+91 98765 43210` or `098765 43210` loses its prefix first.
- */
-export function phoneDigits(input: string): string {
-  let d = input.replace(/\D/g, '');
-  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
-  else if (d.length > 10 && d.startsWith('0')) d = d.slice(1);
-  return d.slice(0, 10);
-}
+/** Digits-only Indian phone field, at most 10. */
+export const phoneDigits = (input: string) => localDigits(INDIA, input);
 
 /** The person on this phone: the chosen one if still in the home, else the first ticked. */
 export function currentMe(p: Profile): Member {
@@ -139,6 +124,41 @@ export function migrateProfile(raw: any): Profile {
   // An onboarded v1 profile: "me" was the first ticked person, and they set the phone up.
   const meId = base.meId ?? currentMe(base).id;
   return { ...base, meId, ownerId: base.ownerId ?? meId };
+}
+
+/**
+ * Make a signed-in account "me" in this home. Idempotent, so it runs whenever
+ * the session or the profile changes. Matches, in order: the member with that
+ * phone; the current "me" if the name matches; a member with the same name and no phone yet; before setup, the
+ * sample member with the same relation (so "Priya, Mom" replaces the sample
+ * Mom); otherwise the account joins the home as a new member.
+ */
+export function linkAccount(p: Profile, account: Account): Profile {
+  const claim = (id: string, edit: Partial<Member>): Profile => ({
+    ...p,
+    meId: id,
+    members: p.members.map((m) => (m.id === id ? { ...m, ...edit, on: true } : m)),
+  });
+  const details = { name: account.name, relation: account.relation, phone: account.phone };
+
+  const byPhone = p.members.find((m) => m.phone === account.phone);
+  if (byPhone) return byPhone.on && p.meId === byPhone.id ? p : claim(byPhone.id, {});
+
+  // Already "me" here (their family-facing number may differ from the sign-in one).
+  const current = p.members.find((m) => m.id === p.meId);
+  if (current?.on && nameKey(current.name) === nameKey(account.name)) return p;
+
+  const byName = p.members.find((m) => !m.phone && nameKey(m.name) === nameKey(account.name));
+  if (byName) return claim(byName.id, details);
+
+  const byRelation = !p.onboarded
+    && p.members.find((m) => !m.phone && m.relation.toLowerCase() === account.relation.toLowerCase());
+  if (byRelation) return claim(byRelation.id, details);
+
+  let id = memberId(account.name);
+  while (p.members.some((m) => m.id === id)) id = `${id}_`;
+  const added = { ...newMember(account.name, account.relation, MEMBER_COLORS[p.members.length % MEMBER_COLORS.length], id), phone: account.phone };
+  return { ...p, meId: id, members: p.onboarded ? [...p.members, added] : [added, ...p.members] };
 }
 
 export interface Activity {
