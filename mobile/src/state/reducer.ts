@@ -301,10 +301,11 @@ export function reducer(state: HouseholdState, action: Action): HouseholdState {
       };
     }
     case 'REMOVE_ITEM':
-      // Soft: kept for audit, hidden from the list view.
+      // Soft: kept for audit, hidden from the list view. A bought row can go too —
+      // its purchase stays in history, only the list line is cleared.
       return {
         ...state,
-        listItems: state.listItems.map((li) => (li.id === action.itemId && li.status === 'pending' ? { ...li, status: 'removed' } : li)),
+        listItems: state.listItems.map((li) => (li.id === action.itemId ? { ...li, status: 'removed' } : li)),
       };
     case 'SET_INVENTORY':
       return { ...state, inventory: upsertInventory(state.inventory, action.update, new Date()) };

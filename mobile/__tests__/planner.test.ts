@@ -228,9 +228,12 @@ describe('reducer: approval flow and item states', () => {
     expect(s1.listItems[0].status).toBe('removed');
     expect(visibleItems(s1.listItems)).toEqual([]);
     expect(buildChatContext(s1).draftList).toEqual([]);
-    // Purchased rows can't be removed.
+    // A bought row can be deleted from the list; its purchase stays in history.
     const bought = reducer(s0, { type: 'MARK_PURCHASED_BY_ID', itemId: s0.listItems[0].id });
-    expect(reducer(bought, { type: 'REMOVE_ITEM', itemId: s0.listItems[0].id }).listItems[0].status).toBe('purchased');
+    const cleared = reducer(bought, { type: 'REMOVE_ITEM', itemId: s0.listItems[0].id });
+    expect(cleared.listItems[0].status).toBe('removed');
+    expect(visibleItems(cleared.listItems)).toEqual([]);
+    expect(cleared.history).toEqual(bought.history);
   });
 
   test('"get 1 kg tomatoes" twice in chat → one 2 kg row', async () => {

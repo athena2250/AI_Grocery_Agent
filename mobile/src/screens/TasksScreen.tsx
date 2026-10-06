@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../theme';
 import { CheckCircle, EmptyState, Masthead, SectionHeading } from '../components/hearth';
-import { CheckIcon } from '../components/icons';
+import { CheckIcon, TrashIcon } from '../components/icons';
 import { useUI } from '../components/UIProvider';
 import { useProfile } from '../state/ProfileContext';
 import { useTasks, type Task } from '../state/TasksContext';
@@ -18,9 +18,9 @@ const c = theme.colors;
  * Task history.
  */
 export function TasksScreen() {
-  const { tasks, toggleTask } = useTasks();
+  const { tasks, toggleTask, removeTask } = useTasks();
   const { profile } = useProfile();
-  const { openAdd } = useUI();
+  const { openAddTask, ask, flash } = useUI();
 
   const groups = useMemo(() => SECTIONS
     .map((s) => ({ section: s, items: tasks.filter((t) => t.section === s) }))
@@ -35,11 +35,18 @@ export function TasksScreen() {
           title="Family tasks, tidy"
           body="Repairs, bills, appointments and errands — tap + to add one and Hearth will fill in the rest."
           cta="Add a task"
-          onCta={openAdd}
+          onCta={() => openAddTask()}
         />
       </SafeAreaView>
     );
   }
+
+  // Small button, so a stray tap only opens the confirm — nothing is deleted without it.
+  const confirmDelete = (t: Task) => ask({
+    title: `Delete "${t.title}"?`,
+    body: 'For a task added by mistake. It won\'t go to Task history.',
+    options: [{ label: 'Delete task', kind: 'danger', onPress: () => { removeTask(t.id); flash('Task deleted', c.red); } }],
+  });
 
   const row = (t: Task) => {
     const name = (id: string) => profile.members.find((m) => m.id === id)?.name;
@@ -61,6 +68,15 @@ export function TasksScreen() {
           ) : null}
           {t.notes ? <Text style={styles.notes} numberOfLines={2}>{t.notes}</Text> : null}
         </View>
+        <Pressable
+          onPress={() => confirmDelete(t)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete ${t.title}`}
+          style={({ pressed }) => [styles.delete, pressed && { opacity: 0.5 }]}
+        >
+          <TrashIcon size={16} color={c.textFaint} />
+        </Pressable>
       </Pressable>
     );
   };
@@ -89,5 +105,6 @@ const styles = StyleSheet.create({
   meta: { fontFamily: theme.font.sans, fontSize: 13, color: c.textMuted, marginTop: 2 },
   late: { color: c.red },
   clears: { fontFamily: theme.font.sans, fontSize: 12, color: c.textFaint, marginTop: 3 },
+  delete: { padding: 4, marginTop: 2 },
   notes: { fontFamily: theme.font.serifItalic, fontSize: 15, color: c.textSoft, marginTop: 4 },
 });

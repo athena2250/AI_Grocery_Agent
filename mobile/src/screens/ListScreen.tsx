@@ -18,7 +18,7 @@ const f = theme.font;
 
 /** Groceries tab: the draft/approved list by store aisle, plus restock and predicted suggestions. */
 export function ListScreen() {
-  const { state, markPurchased, approveList, dismissRestock, dismissPrediction } = useHousehold();
+  const { state, markPurchased, removeItem, approveList, dismissRestock, dismissPrediction } = useHousehold();
   const { ask, flash, openAddItem } = useUI();
   const addProposal = useAddProposal();
   const [selected, setSelected] = useState<ListItem | null>(null);
@@ -116,6 +116,12 @@ export function ListScreen() {
                   flash(`${item.product} bought`);
                 }}
                 onPress={() => setSelected(item)}
+                // Small button, so a stray tap only opens the confirm — nothing is deleted without it.
+                onDelete={() => ask({
+                  title: `Delete ${item.product}?`,
+                  body: 'For an item added by mistake. It won\'t go to History.',
+                  options: [{ label: 'Delete item', kind: 'danger', onPress: () => { removeItem(item.id); flash(`${item.product} deleted`, theme.colors.red); } }],
+                })}
               />
             ))}
           </View>

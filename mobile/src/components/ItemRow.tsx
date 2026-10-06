@@ -4,11 +4,13 @@ import { theme } from '../theme';
 import type { ListItem } from '../types';
 import { CheckCircle } from './hearth';
 import { ConfidenceDot } from './ConfidenceDot';
+import { TrashIcon } from './icons';
 
 interface Props {
   item: ListItem;
   onTogglePurchased: () => void;
   onPress: () => void;
+  onDelete: () => void;
 }
 
 const SOURCE_LABEL: Record<ListItem['source'], string> = {
@@ -18,7 +20,7 @@ const SOURCE_LABEL: Record<ListItem['source'], string> = {
   guess: 'a guess',
 };
 
-export function ItemRow({ item, onTogglePurchased, onPress }: Props) {
+export function ItemRow({ item, onTogglePurchased, onPress, onDelete }: Props) {
   const purchased = item.status === 'purchased';
   const amount = [item.qty != null ? `${item.qty} ${item.unit ?? ''}`.trim() : 'how much?', item.brand].filter(Boolean).join(' · ');
   return (
@@ -33,7 +35,15 @@ export function ItemRow({ item, onTogglePurchased, onPress }: Props) {
           <Text style={styles.meta}>{amount} · {SOURCE_LABEL[item.source]}</Text>
         </View>
       </View>
-      <Text style={styles.chev}>›</Text>
+      <Pressable
+        onPress={onDelete}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={`Delete ${item.product}`}
+        style={({ pressed }) => [styles.delete, pressed && { opacity: 0.5 }]}
+      >
+        <TrashIcon size={16} color={theme.colors.textFaint} />
+      </Pressable>
     </Pressable>
   );
 }
@@ -48,5 +58,5 @@ const styles = StyleSheet.create({
   done: { color: theme.colors.textFaint, textDecorationLine: 'line-through' },
   metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   meta: { fontFamily: theme.font.sans, fontSize: 13, color: theme.colors.textFaint, flexShrink: 1 },
-  chev: { fontSize: 20, color: theme.colors.checkOff },
+  delete: { padding: 4 },
 });

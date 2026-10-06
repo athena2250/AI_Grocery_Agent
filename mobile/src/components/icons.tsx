@@ -29,3 +29,6 @@ export const PlusIcon = ({ size = 24, color, strokeWidth = 1.8 }: P) => (
 export const MicIcon = ({ size = 22, color, strokeWidth = 1.7 }: P) => (
   <Svg {...base(size, color, strokeWidth)}><Rect x={9} y={3} width={6} height={12} rx={3} /><Path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></Svg>
 );
+export const TrashIcon = ({ size = 18, color, strokeWidth = 1.6 }: P) => (
+  <Svg {...base(size, color, strokeWidth)}><Path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" /></Svg>
+);
