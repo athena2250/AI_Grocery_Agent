@@ -587,7 +587,7 @@ async function pagePasskeys() {
       ${d.members.map((m) => `<tr><td><b>${esc(m.name)}</b>${m.relation ? `<div class="faint">${esc(m.relation)}${m.role === "owner" ? " · owner" : ""}</div>` : ""}</td>
         <td><a href="#/family/${esc(m.household_id)}">${esc(m.household)}</a></td><td>${esc(phoneFmt(m.phone) || "—")}</td>
         <td>${keyStatus(m.passkey)}</td><td>${m.signed_in ? `${esc(m.signed_in.device || "a phone")}<div class="faint">seen ${ago(m.signed_in.last_seen)}</div>` : `<span class="muted">no</span>`}</td>
-        <td style="white-space:nowrap">${m.phone ? `<button class="btn small ${m.passkey ? "" : "primary"}" data-issue="${esc(m.id)}">${m.passkey ? "Reset passkey" : "Generate passkey"}</button>` : `<span class="faint">no number</span>`}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">Nobody yet.</td></tr>`}
+        <td style="white-space:nowrap">${m.phone ? `<button class="btn small ${m.passkey ? "" : "primary"}" data-issue="${esc(m.id)}">${m.passkey ? "Reset passkey" : "Generate passkey"}</button>` : `<span class="faint" title="A passkey goes with a phone number. When this person types their name and number on their phone, they show up under Waiting.">no number yet</span>`}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">Nobody yet.</td></tr>`}
       </tbody></table></div></div>`);
 
   document.querySelectorAll("[data-approve]").forEach((b) => b.onclick = async () => {

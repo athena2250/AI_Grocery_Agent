@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -26,6 +26,17 @@ from .db import get_session
 STATIC = Path(__file__).with_name("static")
 
 app = FastAPI(title="Hearth Admin", docs_url=None, redoc_url=None)
+
+
+@app.middleware("http")
+async def _always_fresh(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """The console's own files are tiny: make the browser check for a newer copy every time, so a
+    restarted console never runs yesterday's page."""
+
+    response = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 api = APIRouter(prefix="/api", dependencies=[Depends(require_admin)])
 
 
