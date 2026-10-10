@@ -10,6 +10,7 @@ of its own: `admin_household_status` and `admin_action`.
 | Page | For |
 |---|---|
 | Overview | families by status, active members, this month's spend, open/overdue tasks, issue counts, 12-month spend chart, most-bought items |
+| Passkey Issue | people waiting to sign in (pops up "… is trying to sign in" on every page, checked every 20 s): pick their home and relation → **Generate passkey**, shown once to read out to them; everyone in a home with their passkey status, Generate / Reset passkey (reset signs them out) |
 | Purchases | spend and purchase count per month (chart or table, per family), click a month for every purchase line, frequently bought items for 30/90/180/365 days |
 | Families | every home: status, owner, members, open tasks, purchases (30 days), last activity, issues |
 | Family | members (force sign-out, make owner/member, remove/restore), status (active / under review / suspended + reason), tasks, posts and who received them, grocery lists, bills, sign-in log, issues, admin log |
@@ -48,6 +49,16 @@ someone outside the home. Suspending a home, removing a member and cancelling a 
 written reason, and every write goes to `admin_action` in the same transaction.
 
 ## Run
+
+The easy way, from the repo root (makes and remembers the token, copies it, opens the browser):
+
+```
+scripts/admin.sh          # this Mac's database
+scripts/admin.sh live     # the live (Render) database; asks for its address once
+scripts/admin.sh demo     # made-up families
+```
+
+By hand:
 
 Uses the backend's virtualenv (it already has FastAPI, SQLModel and uvicorn installed):
 

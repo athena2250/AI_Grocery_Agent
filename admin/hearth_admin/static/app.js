@@ -5,6 +5,8 @@ const S = {
   token: sessionGet("hearth_admin_token"),
   admin: sessionGet("hearth_admin_name") || "",
   issues: null,
+  waiting: [],          // people trying to sign in (Passkey Issue)
+  seenWaiting: null,    // request ids already announced, so each prompt shows once
 };
 const root = document.getElementById("root");
 
@@ -69,6 +71,8 @@ function ask({ title, text, fields = [], confirm = "Confirm", danger }) {
       ${fields.map((f) => `<label for="f_${f.name}">${esc(f.label)}${f.required ? " (required)" : ""}</label>` +
         (f.type === "select"
           ? `<select id="f_${f.name}" name="${f.name}">${f.options.map((o) => `<option value="${esc(o.value)}" ${o.value === f.value ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select>`
+          : f.type === "text"
+          ? `<input type="text" id="f_${f.name}" name="${f.name}" value="${esc(f.value || "")}" placeholder="${esc(f.placeholder || "")}" ${f.list ? `list="l_${f.name}"` : ""} autocomplete="off">${f.list ? `<datalist id="l_${f.name}">${f.list.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>` : ""}`
           : `<textarea id="f_${f.name}" name="${f.name}" placeholder="${esc(f.placeholder || "")}"></textarea>`)).join("")}
       <div class="err-text"></div>
       <div class="actions"><button type="button" class="btn" data-x>Cancel</button>
@@ -87,7 +91,7 @@ function ask({ title, text, fields = [], confirm = "Confirm", danger }) {
       done(vals);
     };
     document.body.appendChild(scrim);
-    (form.querySelector("select, textarea") || form.querySelector(".primary")).focus();
+    (form.querySelector("select, input, textarea") || form.querySelector(".primary")).focus();
   });
 }
 
@@ -170,21 +174,52 @@ function hbars(rows, { value, label, right }) {
 }
 
 // ------------------------------------------------------------------ layout
-const NAV = [["overview", "Overview"], ["purchases", "Purchases"], ["families", "Families"], ["tasks", "Tasks"],
+const NAV = [["overview", "Overview"], ["passkeys", "Passkey Issue"], ["purchases", "Purchases"], ["families", "Families"], ["tasks", "Tasks"],
   ["posts", "Feed posts"], ["issues", "Issues"], ["audit", "Audit log"]];
 
 function shell(active, html) {
   const n = S.issues;
   root.innerHTML = `<div class="shell"><nav class="side" aria-label="Sections">
     <div class="brand">Hearth</div><div class="brand-sub">Admin console</div>
-    ${NAV.map(([k, l]) => `<a href="#/${k}" class="${active === k ? "on" : ""}">${l}${k === "issues" && n ? `<span class="count" aria-label="${n} high-severity issues">${n}</span>` : ""}</a>`).join("")}
+    ${NAV.map(([k, l]) => `<a href="#/${k}" class="${active === k ? "on" : ""}">${l}${k === "issues" && n ? `<span class="count" aria-label="${n} high-severity issues">${n}</span>` : ""}${k === "passkeys" ? `<span class="count" id="waitCount" aria-label="people waiting for a passkey" ${S.waiting.length ? "" : "hidden"}>${S.waiting.length}</span>` : ""}</a>`).join("")}
     <div class="spacer"></div>
     <div class="who">Signed in as ${esc(S.admin || "admin")}</div>
     <a href="#" id="theme">Theme: <span id="themeName"></span></a>
-    <a href="#" id="logout">Sign out</a></nav><main id="main">${html}</main></div>`;
+    <a href="#" id="logout">Sign out</a></nav><main id="main"><div id="waitBanner"></div>${html}</main></div>`;
   document.getElementById("logout").onclick = (e) => { e.preventDefault(); signOut(); };
   wireTheme();
+  showWaiting();
 }
+
+// ------------------------------------------------------------------ "is trying to sign in"
+const phoneFmt = (p) => (p && p.startsWith("+91") && p.length === 13 ? `+91 ${p.slice(3, 8)} ${p.slice(8)}` : p || "");
+
+function showWaiting() {
+  const w = S.waiting, count = document.getElementById("waitCount"), banner = document.getElementById("waitBanner");
+  if (count) { count.textContent = w.length; count.hidden = !w.length; }
+  document.title = (w.length ? `(${w.length}) ` : "") + "Hearth Admin";
+  if (!banner) return;
+  const onPage = location.hash.startsWith("#/passkeys");
+  banner.innerHTML = w.length && !onPage ? `<a class="wait-banner" href="#/passkeys"><span class="key" aria-hidden="true">🔑</span>
+    <span><b>${esc(w[0].name)}</b> (${esc(phoneFmt(w[0].phone))}) is trying to sign in${w.length > 1 ? ` — and ${w.length - 1} more` : ""}.</span>
+    <span class="go">Issue passkey ›</span></a>` : "";
+}
+
+async function pollWaiting() {
+  if (!S.token) return;
+  let w;
+  try { w = await api("/passkeys/waiting"); } catch { return; }
+  const fresh = S.seenWaiting ? w.filter((r) => !S.seenWaiting.has(r.id)) : [];
+  S.seenWaiting = new Set(w.map((r) => r.id));
+  S.waiting = w;
+  showWaiting();
+  if (fresh.length) {
+    const r = fresh[0];
+    toast(`🔑 ${r.name} (${phoneFmt(r.phone)}) is trying to sign in`);
+    if (location.hash.startsWith("#/passkeys")) render();
+  }
+}
+setInterval(pollWaiting, 20000);
 function wireTheme() {
   const el = document.getElementById("theme"), name = document.getElementById("themeName");
   const cur = () => document.documentElement.dataset.theme || "auto";
@@ -494,6 +529,94 @@ async function pageIssues(p) {
   wireFixButtons();
 }
 
+// ------------------------------------------------------------------ Passkey Issue
+const RELATIONS = ["Mom", "Dad", "Son", "Daughter", "Grandma", "Grandpa"];
+
+function keyStatus(k) {
+  if (!k) return `<span class="pill warn">no passkey</span>`;
+  if (k.locked_until && new Date(k.locked_until) > new Date()) return `<span class="pill bad">locked · too many tries</span>`;
+  return `<span class="pill good">has passkey</span> <span class="faint">${ago(k.issued_at)} by ${esc(k.issued_by)}</span>`;
+}
+
+function showPasskey(r) {
+  return new Promise((resolve) => {
+    const scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Passkey for ${esc(r.name)}">
+      <div class="kicker">Passkey for ${esc(r.name)}</div>
+      <div class="passkey-big" aria-label="${esc(r.passkey.split("").join(" "))}">${esc(r.passkey)}</div>
+      <p>Read it out to ${esc(r.name)} (${esc(phoneFmt(r.phone))}), or tell them on a call. They type it on their phone with their name and number.
+This is the only time it is shown. If it gets lost, reset it here.${r.replaced ? "\nTheir old passkey stopped working and their phone was signed out." : ""}</p>
+      <div class="actions"><button class="btn" data-copy>Copy</button><button class="btn primary" data-x>Done</button></div></div>`;
+    const done = () => { scrim.remove(); document.removeEventListener("keydown", onKey); resolve(); };
+    const onKey = (e) => { if (e.key === "Escape") done(); };
+    document.addEventListener("keydown", onKey);
+    scrim.querySelector("[data-x]").onclick = done;
+    scrim.querySelector("[data-copy]").onclick = async (e) => {
+      try { await navigator.clipboard.writeText(r.passkey); e.target.textContent = "Copied"; } catch { e.target.textContent = "Select and copy it"; }
+    };
+    document.body.appendChild(scrim);
+    scrim.querySelector("[data-x]").focus();
+  });
+}
+
+async function pagePasskeys() {
+  const d = await api("/passkeys");
+  S.waiting = d.requests; S.seenWaiting = new Set(d.requests.map((r) => r.id));
+  const homeOptions = (sel) => d.homes.map((h) => `<option value="${esc(h.id)}" ${h.id === sel ? "selected" : ""}>${esc(h.name)}</option>`).join("") + `<option value="">New home (they become its owner)</option>`;
+  const reqCard = (r) => `<div class="req" data-req="${esc(r.id)}">
+    <div class="req-who"><span class="key" aria-hidden="true">🔑</span><div><b>${esc(r.name)}</b> is trying to sign in
+      <div class="faint">${esc(phoneFmt(r.phone))} · ${ago(r.last_at)}${r.times > 1 ? ` · asked ${r.times} times` : ""}</div></div></div>
+    ${r.member
+      ? `<div class="muted">Already in <a href="#/family/${esc(r.member.household_id)}">${esc(r.member.household)}</a> as ${esc(r.member.name)}${r.member.relation ? ` (${esc(r.member.relation)})` : ""}. ${r.member.passkey ? "A new passkey replaces their old one." : ""}</div>`
+      : `<div class="req-form">
+          <label>Home<select data-k="household_id">${homeOptions(d.homes[0]?.id)}</select></label>
+          <label>Who they are<input type="text" data-k="relation" list="relations" placeholder="e.g. Mom" autocomplete="off"></label>
+          <label>Role<select data-k="role"><option value="member">Member</option><option value="owner">Owner</option></select></label>
+        </div>`}
+    <div class="row"><button class="btn primary" data-approve="${esc(r.id)}">Generate passkey</button>
+      <button class="btn" data-dismiss="${esc(r.id)}">Not someone I know</button></div></div>`;
+
+  shell("passkeys", head("Sign-in", "Passkey Issue", "When someone types their name and number on a new phone, they wait here for you to give them a passkey.") +
+    `<datalist id="relations">${RELATIONS.map((x) => `<option value="${x}">`).join("")}</datalist>
+    <div class="card"><h2>Waiting${d.requests.length ? ` <span class="pill warn">${d.requests.length}</span>` : ""}</h2>
+      ${d.requests.map(reqCard).join("") || `<div class="empty">Nobody is waiting. This page checks every 20 seconds and tells you when someone tries to sign in.</div>`}</div>
+    <div class="card"><h2>Everyone in a home</h2>
+      <p class="muted" style="margin-top:0">Give a passkey to anyone who doesn't have one yet, or reset a lost one. Resetting signs that person out until they type the new one.</p>
+      <div class="tablewrap"><table><thead><tr><th>Person</th><th>Home</th><th>Number</th><th>Passkey</th><th>Signed in</th><th></th></tr></thead><tbody>
+      ${d.members.map((m) => `<tr><td><b>${esc(m.name)}</b>${m.relation ? `<div class="faint">${esc(m.relation)}${m.role === "owner" ? " · owner" : ""}</div>` : ""}</td>
+        <td><a href="#/family/${esc(m.household_id)}">${esc(m.household)}</a></td><td>${esc(phoneFmt(m.phone) || "—")}</td>
+        <td>${keyStatus(m.passkey)}</td><td>${m.signed_in ? `${esc(m.signed_in.device || "a phone")}<div class="faint">seen ${ago(m.signed_in.last_seen)}</div>` : `<span class="muted">no</span>`}</td>
+        <td style="white-space:nowrap">${m.phone ? `<button class="btn small ${m.passkey ? "" : "primary"}" data-issue="${esc(m.id)}">${m.passkey ? "Reset passkey" : "Generate passkey"}</button>` : `<span class="faint">no number</span>`}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">Nobody yet.</td></tr>`}
+      </tbody></table></div></div>`);
+
+  document.querySelectorAll("[data-approve]").forEach((b) => b.onclick = async () => {
+    const card = b.closest("[data-req]"), body = {};
+    card.querySelectorAll("[data-k]").forEach((el) => { body[el.dataset.k] = el.value.trim(); });
+    b.disabled = true;
+    try {
+      const r = await api(`/passkeys/requests/${b.dataset.approve}/approve`, body);
+      await showPasskey(r);
+      familiesCache = null;
+    } catch (e) { toast(e.message, true); }
+    render();
+  });
+  document.querySelectorAll("[data-dismiss]").forEach((b) => b.onclick = async () => {
+    const r = d.requests.find((x) => x.id === b.dataset.dismiss);
+    const v = await ask({ title: `Dismiss ${r.name}?`, text: `${phoneFmt(r.phone)} won't get a passkey. If they ask again they'll show up here again.`, confirm: "Dismiss" });
+    if (v) act(`/passkeys/requests/${r.id}/dismiss`, {}, "Dismissed");
+  });
+  document.querySelectorAll("[data-issue]").forEach((b) => b.onclick = async () => {
+    const m = d.members.find((x) => x.id === b.dataset.issue);
+    if (m.passkey) {
+      const v = await ask({ title: `Reset ${m.name}'s passkey?`, text: "Their old passkey stops working and their phone is signed out until they type the new one.", confirm: "Reset passkey", danger: true });
+      if (!v) return;
+    }
+    try { await showPasskey(await api(`/members/${m.id}/passkey`, {})); } catch (e) { toast(e.message, true); }
+    render();
+  });
+}
+
 function auditTable(rows) {
   return `<div class="tablewrap"><table><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Note</th><th>Change</th></tr></thead><tbody>
   ${rows.map((a) => `<tr><td>${when(a.at)}</td><td>${esc(a.admin)}</td><td>${esc(pretty(a.action))}</td><td>${esc(a.target_kind)} <span class="faint">${esc(a.target_id)}</span>${a.household_id ? `<div><a href="#/family/${esc(a.household_id)}">${esc(a.household_id)}</a></div>` : ""}</td><td>${esc(a.note || "—")}</td><td><pre class="json">${esc(JSON.stringify(a.detail, null, 1))}</pre></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No admin actions yet.</td></tr>`}</tbody></table></div>`;
@@ -522,6 +645,7 @@ function renderLogin(msg) {
       await api("/me");
       sessionSet("hearth_admin_token", S.token); sessionSet("hearth_admin_name", S.admin);
       render();
+      pollWaiting();
     } catch {}
   };
 }
@@ -535,7 +659,7 @@ async function render() {
     if (S.issues == null) {
       api("/issues").then((d) => { S.issues = d.issues.filter((i) => i.severity === "high").length; const c = document.querySelector('nav a[href="#/issues"]'); if (c && S.issues && !c.querySelector(".count")) c.insertAdjacentHTML("beforeend", `<span class="count">${S.issues}</span>`); }).catch(() => {});
     }
-    const pages = { overview: pageOverview, purchases: pagePurchases, families: pageFamilies, tasks: pageTasks, posts: pagePosts, issues: pageIssues, audit: pageAudit };
+    const pages = { overview: pageOverview, passkeys: pagePasskeys, purchases: pagePurchases, families: pageFamilies, tasks: pageTasks, posts: pagePosts, issues: pageIssues, audit: pageAudit };
     if (page === "family" && id) await pageFamily(decodeURIComponent(id), p);
     else await (pages[page] || pageOverview)(p);
   } catch (e) {
@@ -544,3 +668,4 @@ async function render() {
 }
 window.addEventListener("hashchange", render);
 render();
+pollWaiting();

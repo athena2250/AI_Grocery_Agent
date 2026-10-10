@@ -1,6 +1,6 @@
 # One-click deploy of the Hearth API + its database on Render (render.com → New → Blueprint).
-# Singapore is the closest region to India. After the first deploy, fill in the SMS keys
-# (marked sync: false) in the dashboard. Any Docker host works too: see backend/DEPLOY.md.
+# Singapore is the closest region to India. Any Docker host works too: see backend/DEPLOY.md.
+# Sign-in is name + number + a passkey the admin issues from the admin console: no SMS.
 services:
   - name: hearth-api
     type: web
@@ -20,12 +20,6 @@ services:
           property: connectionString
       - key: AUTH_SECRET
         generateValue: true
-      - key: SMS_PROVIDER
-        value: msg91
-      - key: MSG91_AUTH_KEY
-        sync: false
-      - key: MSG91_TEMPLATE_ID
-        sync: false
       # The LLM (Ollama on a home Mac, behind scripts/share-ollama.sh). Without these the
       # app still works: messages the phone's rules don't recognise get "say it another way".
       - key: OLLAMA_HOST

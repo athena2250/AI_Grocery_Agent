@@ -31,7 +31,7 @@ EXPECTED_TABLES = {
     "conversation_turn", "pending_clarification", "task", "task_event", "bill_account",
     "bill_payment", "market_price", "inventory_event", "memory_event",
     # sign-in
-    "otp_code", "auth_session", "auth_event", "household_invite",
+    "member_passkey", "join_request", "auth_session", "auth_event",
 }
 
 MOBILE_SEED = Path(__file__).resolve().parents[2] / "mobile" / "src" / "data" / "seed.ts"

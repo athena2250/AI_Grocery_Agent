@@ -6,7 +6,7 @@ How to put the Hearth server online and ship the app to Android and iPhone. Do t
 
 | | Sandbox build (`eas build --profile sandbox`) | Live build (`preview` / `production`) |
 |---|---|---|
-| Sign-in | Code shown on screen, accounts on the phone | Code texted by SMS |
+| Sign-in | Passkey shown on screen, accounts on the phone | Name + number, then the passkey you issue from the admin console |
 | Data | This phone only | Shared by everyone in the home |
 | Understanding messages | On-phone rules | On-phone rules first; anything they don't recognise goes to Ollama on the server |
 
@@ -18,20 +18,20 @@ The repo has a one-click blueprint for Render: `render.yaml` at the repo root. I
 
 1. Push this repo to GitHub.
 2. render.com → **New → Blueprint** → pick the repo. Render reads `render.yaml`.
-3. When asked, fill in `MSG91_AUTH_KEY` and `MSG91_TEMPLATE_ID` (step 2 below). You can deploy first and add them after.
-4. When the deploy is green, open `https://<your-service>.onrender.com/healthz`. It should say `{"ok":true}`.
-5. If the address is not `https://hearth-api.onrender.com`, put yours in `mobile/eas.json` (both `preview` and `production`).
+3. When the deploy is green, open `https://<your-service>.onrender.com/healthz`. It should say `{"ok":true}`.
+4. If the address is not `https://hearth-api.onrender.com`, put yours in `mobile/eas.json` (both `preview` and `production`).
 
-Any other Docker host works too (Railway, Fly.io, a VPS). Build `backend/Dockerfile` and set the variables in `backend/.env.example`. The server creates its tables on start and refuses to start in production without `AUTH_SECRET`, or with the on-screen "console" SMS sender.
+Any other Docker host works too (Railway, Fly.io, a VPS). Build `backend/Dockerfile` and set the variables in `backend/.env.example`. The server creates its tables on start and refuses to start in production without `AUTH_SECRET`.
 
-## 2. Text messages (you, can take a few days)
+## 2. Sign-in: passkeys from the admin console (you, a minute per person)
 
-Indian numbers only receive OTP texts from **DLT-registered** senders. That is a TRAI rule, not something the code can avoid.
+There are no texted codes. A person opens the app, types their name and number, and the phone says "Please ask the admin for your passkey". You see them waiting in the admin console (`scripts/admin.sh live`, page **Passkey Issue**; it checks every 20 seconds and pops up "… is trying to sign in"). Pick their home and who they are, click **Generate passkey**, and read the passkey (`K7M4-PX9Q`) out to them. It is shown once and stored only as a slow, salted hash mixed with `AUTH_SECRET`, so **changing `AUTH_SECRET` makes every passkey stop working**.
 
-- **MSG91** (set up for India): register your entity, sender ID, and an OTP template on DLT through MSG91. The template must contain `##OTP##`. Set `SMS_PROVIDER=msg91`, `MSG91_AUTH_KEY`, and `MSG91_TEMPLATE_ID`.
-- **Twilio** (outside India): set `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM`.
+People who joined before passkeys stay signed in. To give them one for a new phone, use **Everyone in a home → Generate passkey**. A lost passkey: **Reset passkey**, which also signs that person out until they type the new one.
 
-Limits already in the server: 30 s between codes, 5 per number per hour, 10 per day, and 30 per IP address per hour.
+Limits in the server: 5 wrong passkeys lock that number for 15 minutes; 30 join requests or passkey tries per IP address per hour; at most 50 people waiting at once. Every mismatch (unknown number, wrong name, wrong passkey) gets the same answer, and asking to join never says whether a number is set up. A phone unused for 90 days is signed out.
+
+The per-IP limit reads `X-Forwarded-For` from the right, because the left side is whatever the caller sent. `TRUSTED_PROXY_HOPS` (default 1) is how many proxies sit in front of the server. If everyone starts hitting "Too many tries" together on Render, a CDN is in front, so set it to 2.
 
 ## 2b. The AI (Ollama), for everyone
 
@@ -69,15 +69,14 @@ Store data-safety answers, from what the app actually does: it collects name and
 
 ## 5. Bringing the family in
 
-1. Mom (or whoever sets it up) installs the live build → **Create an account** → leaves *Home code* empty. This starts the home, and anything already on her phone becomes the home's starting data.
-2. More → **Invite family** → **Share code** (for example `HRTH-4K9P`, valid 7 days).
-3. Everyone else installs → **Create an account** → enters the home code. They see the same list, pantry, and tasks, updated every 15 seconds and whenever the app opens.
+1. Everyone installs the live build → **Get started** → types their name and number. The phone says "Please ask the admin for your passkey".
+2. You open the admin console (`scripts/admin.sh live`) → **Passkey Issue**. For the first person, choose **New home** (they become its owner); for everyone after, choose that home. Click **Generate passkey** and read it out.
+3. They type the passkey and are in. They see the same list, pantry, and tasks, updated every 15 seconds and whenever the app opens.
 
 ## Developing against a local server
 
 ```
-cd backend && SMS_PROVIDER=console .venv/bin/uvicorn app.main:app --host 0.0.0.0 --reload
+cd backend && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --reload
 cd mobile && EXPO_PUBLIC_API_URL=http://<your-mac's-LAN-IP>:8000 npx expo start
+scripts/admin.sh local        # issue passkeys to your test phones
 ```
-
-The code appears in the server log and on the screen (sandbox banner).

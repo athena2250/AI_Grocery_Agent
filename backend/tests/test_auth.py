@@ -1,22 +1,23 @@
-"""Sign-in rules: codes, sign-up paths (new home / claimed invite / home code), one device,
-the login log, rate limits, phone change and retention."""
+"""Sign-in rules: join requests, admin-issued passkeys, lockout, one device, idle sign-out,
+the login log, retention and account deletion."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from random import Random
 
 import pytest
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, func, select
+from sqlmodel import Session, select
 
 from app.auth import store
 from app.auth.models import (
     AuthEvent,
     AuthEventKind,
     AuthSession,
-    HouseholdInvite,
-    OtpCode,
-    OtpPurpose,
+    JoinRequest,
+    JoinRequestStatus,
+    MemberPasskey,
     SessionEndReason,
 )
 from app.auth.store import AuthRefused
@@ -24,10 +25,9 @@ from app.core.models import Household, Member, MemberRole
 from app.db import get_engine
 from app.seed import main
 
-T0 = datetime(2026, 10, 6, 9, 0, tzinfo=UTC)
+T0 = datetime(2026, 10, 10, 9, 0, tzinfo=UTC)
 PRIYA = "+919876543210"
 RAVI = "+919811112222"
-UP, IN = OtpPurpose.SIGN_UP, OtpPurpose.SIGN_IN
 
 
 @pytest.fixture()
@@ -44,234 +44,226 @@ def refused(fn, *args, **kwargs) -> AuthRefused:
     return e.value
 
 
-def sign_up(s, phone=PRIYA, name="Priya", relation="Mom", now=T0, **kw):
-    sent = store.request_code(s, purpose=UP, phone=phone, name=name, relation=relation, now=now, **kw)
-    return store.verify_sign_in(s, purpose=UP, phone=phone, code=sent.code, now=now, device_label="Priya's Redmi")
+def ask(s, phone=PRIYA, name="Priya", now=T0):
+    store.request_access(s, phone=phone, name=name, now=now)
+    return s.exec(select(JoinRequest).where(JoinRequest.phone == phone)
+                  .order_by(JoinRequest.first_at.desc())).first()  # type: ignore[attr-defined]
 
 
-def sign_in(s, phone=PRIYA, name="Priya", now=T0, label="Pixel"):
-    sent = store.request_code(s, purpose=IN, phone=phone, name=name, now=now)
-    return store.verify_sign_in(s, purpose=IN, phone=phone, code=sent.code, now=now, device_label=label)
+def approve(s, phone=PRIYA, name="Priya", now=T0, **kw):
+    req = ask(s, phone, name, now)
+    return store.approve_request(s, request_id=req.id, now=now, by="Admin", **kw)
+
+
+def sign_in(s, phone=PRIYA, name="Priya", passkey="", now=T0, label="Pixel"):
+    return store.sign_in_with_passkey(s, phone=phone, name=name, passkey=passkey, now=now, device_label=label)
+
+
+def joined(s, phone=PRIYA, name="Priya", now=T0, **kw):
+    member, key = approve(s, phone, name, now, **kw)
+    return member, key, sign_in(s, phone, name, key, now)
 
 
 def events(s, kind):
     return s.exec(select(AuthEvent).where(AuthEvent.kind == kind)).all()
 
 
-# ------------------------------------------------------------ sign up
+# ------------------------------------------------------------ asking to join
 
-def test_sign_up_with_a_new_number_starts_a_home_with_you_as_owner(s):
-    r = sign_up(s, name="  Priya  ")
-    s.commit()
-    assert r.created and r.replaced is None
-    assert r.member.name == "Priya" and r.member.relation == "Mom" and r.member.role is MemberRole.OWNER
-    home = s.get(Household, r.member.household_id)
-    assert home is not None and home.id != "h_home" and home.name == "Priya’s home"
-    assert store.authenticate(s, r.token, T0).status == "active"
-    assert [e.detail_json["how"] for e in events(s, AuthEventKind.SIGNED_UP)] == ["new_home"]
+def test_asking_puts_one_pending_request_on_the_admins_list(s):
+    ask(s, name="  Priya  ")
+    req = ask(s, name="Priya Rao", now=T0 + timedelta(minutes=2))  # tapped Continue again
+    assert len(store.pending_requests(s)) == 1
+    assert (req.name, req.times, req.status) == ("Priya Rao", 2, JoinRequestStatus.PENDING)
 
 
-def test_codes_and_tokens_are_never_stored_in_plain(s):
-    sent = store.request_code(s, purpose=UP, phone=PRIYA, name="Priya", relation="Mom", now=T0)
-    row = s.exec(select(OtpCode)).one()
-    assert sent.code not in row.code_hash and len(sent.code) == 6
-    r = store.verify_sign_in(s, purpose=UP, phone=PRIYA, code=sent.code, now=T0)
-    assert r.token not in r.session.token_hash
-    assert all(sent.code not in str(e.detail_json) for e in s.exec(select(AuthEvent)).all())
+def test_asking_checks_only_what_was_typed(s):
+    assert refused(store.request_access, s, phone="9876543210", name="P", now=T0).error == "invalid_phone"
+    assert refused(store.request_access, s, phone=PRIYA, name=" ", now=T0).error == "invalid_name"
 
 
-def test_sign_up_claims_the_row_the_owner_added_and_the_typed_name_wins(s):
+def test_someone_with_a_passkey_asking_again_does_not_bother_the_admin(s):
+    joined(s)
+    store.request_access(s, phone=PRIYA, name="Anyone", now=T0 + timedelta(hours=1))  # same answer: nothing
+    assert store.pending_requests(s) == []
+
+
+def test_the_waiting_list_cannot_be_flooded(s, monkeypatch):
+    monkeypatch.setattr(store, "MAX_PENDING_REQUESTS", 2)
+    for i in range(4):
+        store.request_access(s, phone=f"+9198000000{i:02d}", name="X", now=T0)
+    assert len(store.pending_requests(s)) == 2
+
+
+# ------------------------------------------------------------ admin: approve / issue
+
+def test_approving_into_a_home_adds_the_member_and_returns_a_readable_passkey(s):
+    member, key = approve(s, phone=RAVI, name="Ravi", household_id="h_home", relation="Dad")
+    assert (member.household_id, member.relation, member.role) == ("h_home", "Dad", MemberRole.MEMBER)
+    assert len(key) == store.PASSKEY_LENGTH and not set(key) & set("01OIL")
+    assert store.format_passkey(key) == f"{key[:4]}-{key[4:]}"
+    req = s.exec(select(JoinRequest)).one()
+    assert (req.status, req.member_id, req.resolved_by) == (JoinRequestStatus.APPROVED, member.id, "Admin")
+
+
+def test_approving_without_a_home_starts_one_with_them_as_owner(s):
+    member, _ = approve(s, relation="Mom")
+    home = s.get(Household, member.household_id)
+    assert member.role is MemberRole.OWNER and home.name == "Priya’s home"
+
+
+def test_a_number_already_in_a_home_keeps_its_person(s):
     dad = s.get(Member, "m_dad")
     dad.phone = RAVI
     s.add(dad)
-    s.commit()
-    r = sign_up(s, phone=RAVI, name="Ravi Kumar", relation="")
-    assert r.member.id == "m_dad" and r.member.household_id == "h_home"
-    assert r.member.name == "Ravi Kumar" and r.member.relation == "dad"  # blank relation keeps the owner's
-    assert events(s, AuthEventKind.SIGNED_UP)[0].detail_json["how"] == "claimed"
+    member, _ = approve(s, phone=RAVI, name="Ravi", household_id=None)
+    assert member.id == "m_dad" and member.household_id == "h_home"
 
 
-def test_sign_up_with_a_home_code_joins_that_home(s):
-    inv = store.create_invite(s, member_id="m_dad", now=T0)  # any member, not just the owner
-    assert inv.code.startswith("HRTH-") and len(inv.code) == 9
-    r = sign_up(s, phone=RAVI, name="Arjun", relation="Son", invite_code=inv.code.lower().replace("-", " "))
-    assert r.member.household_id == "h_home" and r.member.role is MemberRole.MEMBER
-    assert s.get(HouseholdInvite, inv.id).uses == 1
-    # Many people can use one code.
-    sign_up(s, phone="+919800000001", name="Meera", relation="Daughter", invite_code=inv.code)
-    assert s.get(HouseholdInvite, inv.id).uses == 2
+def test_passkeys_are_stored_only_as_a_slow_salted_hash(s):
+    member, key = approve(s)
+    row = s.get(MemberPasskey, member.id)
+    assert key not in row.passkey_hash and row.passkey_hash.startswith("scrypt$")
+    assert store.hash_passkey(key) != store.hash_passkey(key)  # salted
+    assert store.passkey_matches(row.passkey_hash, key.lower())
 
 
-def test_home_codes_stop_working_after_7_days_or_when_revoked(s):
-    inv = store.create_invite(s, member_id="m_me", now=T0)
-    late = T0 + timedelta(days=7)
-    e = refused(store.request_code, s, purpose=UP, phone=RAVI, name="A", relation="Son", invite_code=inv.code, now=late)
-    assert e.error == "invalid_invite"
-    store.revoke_invite(s, invite_id=inv.id, member_id="m_mom", now=T0)
-    e = refused(store.request_code, s, purpose=UP, phone=RAVI, name="A", relation="Son", invite_code=inv.code, now=T0)
-    assert e.error == "invalid_invite"
+def test_a_request_is_answered_once(s):
+    req = ask(s)
+    store.dismiss_request(s, request_id=req.id, now=T0, by="Admin")
+    assert refused(store.approve_request, s, request_id=req.id, now=T0, by="Admin").error == "not_pending"
 
 
-def test_one_household_per_person(s):
-    sign_up(s)  # Priya's own home
-    s.commit()
-    inv = store.create_invite(s, member_id="m_mom", now=T0)
-    e = refused(store.request_code, s, purpose=UP, phone=PRIYA, name="Priya", relation="Mom",
-                invite_code=inv.code, now=T0 + timedelta(minutes=1))
-    assert e.error == "account_exists"
+def test_removed_people_get_no_passkey(s):
+    s.get(Member, "m_dad").is_active = False
+    assert refused(store.issue_passkey, s, member_id="m_dad", now=T0, by="Admin").error == "removed"
 
 
-def test_an_invited_number_cannot_use_another_homes_code(s):
+def test_existing_members_can_be_given_a_passkey_directly(s):
     dad = s.get(Member, "m_dad")
     dad.phone = RAVI
     s.add(dad)
-    other = sign_up(s, phone=PRIYA)
-    inv = store.create_invite(s, member_id=other.member.id, now=T0)
-    e = refused(store.request_code, s, purpose=UP, phone=RAVI, name="Ravi", relation="Dad", invite_code=inv.code, now=T0)
-    assert e.error == "phone_in_other_home"
+    key = store.issue_passkey(s, member_id="m_dad", now=T0, by="Admin", rng=Random(1))
+    assert sign_in(s, RAVI, dad.name, key).member.id == "m_dad"
 
 
-def test_a_second_sign_up_on_the_same_number_is_refused(s):
-    sign_up(s)
-    e = refused(store.request_code, s, purpose=UP, phone=PRIYA, name="Someone", relation="Dad", now=T0 + timedelta(minutes=1))
-    assert e.error == "account_exists"
+# ------------------------------------------------------------ signing in
+
+def test_name_number_and_passkey_sign_in_first_as_new_then_returning(s):
+    _, key, first = joined(s)
+    assert first.created and first.member.phone == PRIYA
+    again = sign_in(s, name="  priya ", passkey=key.lower()[:4] + " - " + key.lower()[4:], now=T0 + timedelta(minutes=1))
+    assert not again.created
+    assert events(s, AuthEventKind.SIGNED_UP)[0].detail_json["how"] == "passkey"
 
 
-@pytest.mark.parametrize("name,relation,error", [("", "Mom", "invalid_name"), ("Priya", " ", "invalid_relation")])
-def test_sign_up_needs_name_and_relation(s, name, relation, error):
-    assert refused(store.request_code, s, purpose=UP, phone=PRIYA, name=name, relation=relation, now=T0).error == error
+@pytest.mark.parametrize("phone,name,good_key", [(PRIYA, "Ravi", True), (PRIYA, "Priya", False), (RAVI, "Priya", True)])
+def test_every_mismatch_gets_the_same_answer(s, phone, name, good_key):
+    _, key = approve(s)
+    typed = key if good_key else ("A" * 8 if key != "A" * 8 else "B" * 8)
+    e = refused(sign_in, s, phone, name, typed)
+    assert (e.error, e.message) == ("wrong_details", store.MESSAGES["wrong_details"])
 
 
-def test_phone_must_be_e164(s):
-    assert refused(store.request_code, s, purpose=UP, phone="9876543210", name="P", relation="Mom", now=T0).error == "invalid_phone"
+def test_a_passkey_must_look_like_one(s):
+    assert refused(sign_in, s, passkey="12").error == "invalid_passkey"
 
 
-# ------------------------------------------------------------ sign in
-
-def test_sign_in_needs_the_matching_name_ignoring_case_and_spaces(s):
-    sign_up(s, name="Priya Rao")
-    later = T0 + timedelta(minutes=1)
-    assert refused(store.request_code, s, purpose=IN, phone=PRIYA, name="Ravi", now=later).error == "name_mismatch"
-    r = sign_in(s, name="priyarao", now=later)
-    assert not r.created and r.member.name == "Priya Rao"
+def test_five_wrong_tries_lock_the_number_for_15_minutes(s):
+    _, key = approve(s)
+    for _ in range(store.MAX_ATTEMPTS - 1):
+        assert refused(sign_in, s, passkey="ZZZZZZZZ").error == "wrong_details"
+    assert refused(sign_in, s, passkey="ZZZZZZZZ").error == "locked"
+    assert refused(sign_in, s, passkey=key, now=T0 + timedelta(minutes=14)).error == "locked"  # even the right one
+    assert sign_in(s, passkey=key, now=T0 + timedelta(minutes=15)).created
     s.commit()
-    assert [e.detail_json["error"] for e in events(s, AuthEventKind.REFUSED)] == ["name_mismatch"]
+    assert len(events(s, AuthEventKind.PASSKEY_FAILED)) == 4 and len(events(s, AuthEventKind.PASSKEY_LOCKED)) == 1
 
 
-def test_sign_in_with_an_unknown_number(s):
-    assert refused(store.request_code, s, purpose=IN, phone=PRIYA, name="Priya", now=T0).error == "no_account"
+def test_a_new_passkey_ends_the_old_one_and_signs_them_out(s):
+    member, old, first = joined(s)
+    new = store.issue_passkey(s, member_id=member.id, now=T0 + timedelta(hours=1), by="Admin")
+    check = store.authenticate(s, first.token, T0 + timedelta(hours=1))
+    assert check.status == "revoked" and check.reason is SessionEndReason.SIGNED_OUT
+    if new != old:
+        assert refused(sign_in, s, passkey=old, now=T0 + timedelta(hours=2)).error == "wrong_details"
+    assert sign_in(s, passkey=new, now=T0 + timedelta(hours=2)).member.id == member.id
 
+
+def test_removed_people_cannot_sign_in(s):
+    member, key = approve(s)
+    member.is_active = False
+    s.add(member)
+    assert refused(sign_in, s, passkey=key).error == "wrong_details"
+
+
+# ------------------------------------------------------------ sessions
 
 def test_signing_in_on_another_phone_signs_the_old_one_out(s):
-    first = sign_up(s)
-    second = sign_in(s, now=T0 + timedelta(minutes=1), label="Priya's new iPhone")
+    _, key, first = joined(s)
+    second = sign_in(s, passkey=key, now=T0 + timedelta(minutes=1), label="Priya's new iPhone")
     assert second.replaced is not None and second.replaced.id == first.session.id
     old = store.authenticate(s, first.token, T0 + timedelta(minutes=2))
     assert old.status == "revoked" and old.reason is SessionEndReason.REPLACED
     assert old.now_on == "Priya's new iPhone"
     assert store.authenticate(s, second.token, T0 + timedelta(minutes=2)).status == "active"
-    assert len(events(s, AuthEventKind.SESSION_REPLACED)) == 1
 
 
 def test_the_database_allows_only_one_active_session_per_person(s):
-    r = sign_up(s)
+    member, _, _ = joined(s)
     s.commit()
-    s.add(AuthSession(id="as_dup", member_id=r.member.id, token_hash="x"))
+    s.add(AuthSession(id="as_dup", member_id=member.id, token_hash="x"))
     with pytest.raises(IntegrityError):
         s.commit()
 
 
-def test_sessions_last_until_sign_out(s):
-    r = sign_up(s)
-    year_later = T0 + timedelta(days=400)
-    assert store.authenticate(s, r.token, year_later).status == "active"
-    assert store.sign_out(s, r.token, year_later)
-    check = store.authenticate(s, r.token, year_later)
+def test_sessions_last_while_used_and_end_on_sign_out(s):
+    _, _, r = joined(s)
+    day = T0
+    for _ in range(5):  # used every couple of months: still signed in after 400+ days
+        day += timedelta(days=85)
+        assert store.authenticate(s, r.token, day).status == "active"
+    assert store.sign_out(s, r.token, day)
+    check = store.authenticate(s, r.token, day)
     assert check.status == "revoked" and check.reason is SessionEndReason.SIGNED_OUT
-    assert not store.sign_out(s, r.token, year_later)
-    assert store.authenticate(s, "made-up", year_later).status == "unknown"
+    assert not store.sign_out(s, r.token, day)
+    assert store.authenticate(s, "made-up", day).status == "unknown"
+
+
+def test_a_phone_unused_for_90_days_is_signed_out(s):
+    _, key, r = joined(s)
+    assert store.authenticate(s, r.token, T0 + timedelta(days=90)).status == "active"
+    check = store.authenticate(s, r.token, T0 + timedelta(days=181))
+    assert check.status == "revoked" and check.reason is SessionEndReason.SIGNED_OUT
+    s.commit()
+    assert [e.detail_json["reason"] for e in events(s, AuthEventKind.SESSIONS_REVOKED)] == ["idle"]
+    assert sign_in(s, passkey=key, now=T0 + timedelta(days=182)).replaced is None
 
 
 def test_taking_someone_out_of_the_home_ends_their_session(s):
-    r = sign_up(s)
-    r.member.is_active = False
-    s.add(r.member)
-    store.revoke_member_sessions(s, r.member.id, T0)
+    member, _, r = joined(s)
+    member.is_active = False
+    s.add(member)
+    store.revoke_member_sessions(s, member.id, T0)
     assert store.authenticate(s, r.token, T0).reason is SessionEndReason.REMOVED
-    assert refused(store.request_code, s, purpose=IN, phone=PRIYA, name="Priya", now=T0 + timedelta(minutes=1)).error == "removed"
 
 
-# ------------------------------------------------------------ codes
+# ------------------------------------------------------------ retention + deletion
 
-def test_wrong_codes_count_down_then_lock(s):
-    store.request_code(s, purpose=UP, phone=PRIYA, name="Priya", relation="Mom", now=T0)
-    for left in (4, 3, 2, 1):
-        e = refused(store.verify_sign_in, s, purpose=UP, phone=PRIYA, code="xxxxxx", now=T0)
-        assert e.error == "wrong_code" and e.detail["attempts_left"] == left
-    assert refused(store.verify_sign_in, s, purpose=UP, phone=PRIYA, code="xxxxxx", now=T0).error == "too_many_attempts"
-    assert refused(store.verify_sign_in, s, purpose=UP, phone=PRIYA, code="xxxxxx", now=T0).error == "no_code"
+def test_purge_drops_answered_requests_after_30_days_and_the_log_after_a_year(s):
+    joined(s)  # an answered request + sign-in log entries
+    ask(s, phone=RAVI, name="Ravi")
     s.commit()
-    assert len(events(s, AuthEventKind.CODE_FAILED)) == 4 and len(events(s, AuthEventKind.CODE_LOCKED)) == 1
+    assert store.purge(s, T0 + timedelta(days=29)) == {"join_request": 0, "auth_event": 0}
+    out = store.purge(s, T0 + timedelta(days=31))
+    assert out["join_request"] == 2  # the answered one, and the stale pending one
+    assert store.purge(s, T0 + timedelta(days=366))["auth_event"] >= 1
 
 
-def test_codes_expire_after_5_minutes(s):
-    sent = store.request_code(s, purpose=UP, phone=PRIYA, name="Priya", relation="Mom", now=T0)
-    late = T0 + timedelta(minutes=5)
-    assert refused(store.verify_sign_in, s, purpose=UP, phone=PRIYA, code=sent.code, now=late).error == "expired"
-
-
-def test_resend_waits_30_seconds_and_replaces_the_old_code(s):
-    first = store.request_code(s, purpose=UP, phone=PRIYA, name="Priya", relation="Mom", now=T0)
-    e = refused(store.request_code, s, purpose=UP, phone=PRIYA, name="Priya", relation="Mom", now=T0 + timedelta(seconds=29))
-    assert e.error == "resend_too_soon"
-    second = store.request_code(s, purpose=UP, phone=PRIYA, name="Priya", relation="Mom", now=T0 + timedelta(seconds=30))
-    assert s.exec(select(func.count()).select_from(OtpCode)).one() == 1
-    if first.code != second.code:
-        e = refused(store.verify_sign_in, s, purpose=UP, phone=PRIYA, code=first.code, now=T0 + timedelta(seconds=31))
-        assert e.error == "wrong_code"
-
-
-def test_at_most_5_codes_an_hour_and_10_a_day(s):
-    def ask(at):
-        return store.request_code(s, purpose=UP, phone=PRIYA, name="Priya", relation="Mom", now=at)
-
-    for i in range(5):
-        ask(T0 + timedelta(minutes=i))
-    assert refused(ask, T0 + timedelta(minutes=10)).error == "rate_limited"
-    for i in range(5):
-        ask(T0 + timedelta(hours=2, minutes=i))
-    assert refused(ask, T0 + timedelta(hours=5)).error == "rate_limited"  # 10 today
-    ask(T0 + timedelta(days=1, minutes=5))
-
-
-# ------------------------------------------------------------ phone change
-
-def test_changing_your_number_needs_a_code_on_the_new_one(s):
-    r = sign_up(s)
-    new = "+919700000000"
-    sent = store.request_code(s, purpose=OtpPurpose.CHANGE_PHONE, phone=new, member_id=r.member.id, now=T0)
-    m = store.verify_phone_change(s, member_id=r.member.id, phone=new, code=sent.code, now=T0)
-    assert m.phone == new
-    assert events(s, AuthEventKind.PHONE_CHANGED)[0].detail_json["old_phone"] == PRIYA
-    assert store.authenticate(s, r.token, T0).status == "active"  # still signed in on this phone
-    # The old number is free for a new sign-up.
-    assert sign_up(s, phone=PRIYA, name="Someone", relation="Dad", now=T0 + timedelta(minutes=1)).created
-
-
-def test_you_cannot_take_someone_elses_number(s):
-    r = sign_up(s)
-    sign_up(s, phone=RAVI, name="Ravi", relation="Dad")
-    e = refused(store.request_code, s, purpose=OtpPurpose.CHANGE_PHONE, phone=RAVI, member_id=r.member.id, now=T0)
-    assert e.error == "phone_taken"
-
-
-# ------------------------------------------------------------ retention
-
-def test_purge_drops_old_codes_after_a_day_and_the_log_after_a_year(s):
-    sign_up(s)  # one used code + a few events
-    store.request_code(s, purpose=UP, phone=RAVI, name="Ravi", relation="Dad", now=T0)  # never used
-    s.commit()
-    assert store.purge(s, T0 + timedelta(hours=23)) == {"otp_code": 0, "auth_event": 0}
-    assert store.purge(s, T0 + timedelta(days=1, minutes=6))["otp_code"] == 2
-    kept = s.exec(select(func.count()).select_from(AuthEvent)).one()
-    assert store.purge(s, T0 + timedelta(days=366))["auth_event"] == kept
+def test_delete_account_forgets_the_passkey_and_frees_the_number(s):
+    member, _, _ = joined(s)
+    assert store.delete_account(s, member_id=member.id, now=T0) is True  # last one in their home
+    assert s.get(MemberPasskey, member.id) is None
+    assert member.phone is None and member.name == store.DELETED_NAME
+    again, _ = approve(s, now=T0 + timedelta(minutes=1))
+    assert again.id != member.id

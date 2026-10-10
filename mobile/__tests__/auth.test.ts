@@ -1,7 +1,7 @@
 jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
 
 import { MockAuthService } from '../src/services/MockAuthService';
-import { MAX_ATTEMPTS, OTP_TTL_MS, RESEND_AFTER_MS, checkRequest, clock, nameKey, type Account } from '../src/state/auth';
+import { LOCK_MS, MAX_ATTEMPTS, checkPasskey, formatPasskey, makePasskey, nameKey, passkeyKey, type Account } from '../src/state/auth';
 import { COUNTRIES, countryByCode, formatPhone, localDigits, splitE164, toE164 } from '../src/state/phone';
 import { DEFAULT_PROFILE, linkAccount } from '../src/state/profile';
 
@@ -19,7 +19,7 @@ function memoryStore() {
   };
 }
 
-/** A service with a hand-cranked clock; every code is 000000 unless a test overrides it. */
+/** A service with a hand-cranked clock; every passkey is AAAAAAAA. */
 function setup() {
   let t = 1_000_000;
   const store = memoryStore();
@@ -28,11 +28,12 @@ function setup() {
 }
 
 const PHONE = '+919876543210';
+const KEY = 'AAAA-AAAA';
 
-async function signUp(svc: MockAuthService, name = 'Lakshmi', relation = 'Mom', phone = PHONE) {
-  const r = await svc.requestOtp({ mode: 'sign_up', name, relation, phone });
+async function join(svc: MockAuthService, name = 'Lakshmi', phone = PHONE) {
+  const r = await svc.requestAccess({ name, phone });
   if (!r.ok) throw new Error(r.error);
-  return svc.verifyOtp(phone, r.devCode!);
+  return svc.signInWithPasskey({ name, phone, passkey: r.sandboxPasskey! });
 }
 
 describe('phone', () => {
@@ -65,95 +66,104 @@ describe('phone', () => {
 });
 
 describe('auth rules', () => {
-  const acct: Account = { phone: PHONE, name: 'Lakshmi Rao', relation: 'Mom', createdAt: '' };
+  const rec = { name: 'Lakshmi Rao', passkey: 'K7M4PX9Q', attemptsLeft: MAX_ATTEMPTS };
 
   it('names match ignoring case and spaces', () => expect(nameKey('  lakshmi  RAO')).toBe(nameKey('LakshmiRao')));
 
-  it.each([
-    ['sign_in', 'Lakshmi Rao', undefined, acct, null],
-    ['sign_in', 'lakshmirao', undefined, acct, null],
-    ['sign_in', 'Ravi', undefined, acct, 'name_mismatch'],
-    ['sign_in', 'Lakshmi', undefined, undefined, 'no_account'],
-    ['sign_in', '  ', undefined, acct, 'invalid_name'],
-    ['sign_up', 'Lakshmi', 'Mom', undefined, null],
-    ['sign_up', 'Lakshmi', 'Mom', acct, 'account_exists'],
-    ['sign_up', 'Lakshmi', ' ', undefined, 'invalid_relation'],
-  ] as const)('%s as %s → %s', (mode, name, relation, existing, error) => {
-    expect(checkRequest(mode, name, relation, existing)).toBe(error);
+  it('passkeys ignore case, spaces and the dash, and show as XXXX-XXXX', () => {
+    expect(passkeyKey(' k7m4 - px9q ')).toBe('K7M4PX9Q');
+    expect(formatPasskey('k7m4px9q')).toBe('K7M4-PX9Q');
+    expect(formatPasskey('k7m')).toBe('K7M');
+    expect(formatPasskey('K7M4-PX9QZZZ')).toBe('K7M4-PX9Q');
   });
 
-  it('formats countdowns', () => {
-    expect(clock(24_000)).toBe('0:24');
-    expect(clock(OTP_TTL_MS)).toBe('5:00');
-    expect(clock(-5)).toBe('0:00');
+  it('makes passkeys without look-alike characters', () => {
+    const k = makePasskey(() => 0.999);
+    expect(k).toHaveLength(8);
+    expect(k).not.toMatch(/[01OIL]/);
+  });
+
+  it.each([
+    ['right name and passkey', rec, undefined, 'lakshmirao', 'k7m4-px9q', true],
+    ['account name wins over the asked-with name', rec, 'Lakshmi', 'lakshmi', 'K7M4PX9Q', true],
+    ['wrong passkey', rec, undefined, 'Lakshmi Rao', 'K7M4PX9R', false],
+    ['wrong name', rec, undefined, 'Ravi', 'K7M4PX9Q', false],
+    ['no passkey issued', undefined, undefined, 'Lakshmi Rao', 'K7M4PX9Q', false],
+  ] as const)('%s', (_label, record, accountName, name, passkey, ok) => {
+    const r = checkPasskey(record, accountName, name, passkey, 0);
+    expect(r.ok).toBe(ok);
+    if (!r.ok) expect(r.error).toBe('wrong_details');  // never says which part was wrong
+  });
+
+  it('locks after too many wrong tries, then counts afresh', () => {
+    let r = checkPasskey(rec, undefined, 'Lakshmi Rao', 'NOPE', 0);
+    let record = rec;
+    for (let i = 1; i < MAX_ATTEMPTS; i++) {
+      expect(r).toMatchObject({ ok: false, error: 'wrong_details' });
+      record = (r as { record: typeof rec }).record;
+      r = checkPasskey(record, undefined, 'Lakshmi Rao', 'NOPE', 0);
+    }
+    expect(r).toMatchObject({ ok: false, error: 'locked', lockedUntil: LOCK_MS });
+    const locked = { ...record, lockedUntil: LOCK_MS };
+    expect(checkPasskey(locked, undefined, 'Lakshmi Rao', 'K7M4PX9Q', LOCK_MS - 1)).toMatchObject({ error: 'locked' });
+    expect(checkPasskey(locked, undefined, 'Lakshmi Rao', 'K7M4PX9Q', LOCK_MS).ok).toBe(true);
+    expect(checkPasskey(locked, undefined, 'Lakshmi Rao', 'NOPE', LOCK_MS))
+      .toMatchObject({ error: 'wrong_details', record: { attemptsLeft: MAX_ATTEMPTS - 1 } });
   });
 });
 
 describe('MockAuthService', () => {
-  it('signs up, then signs in with the same name and number', async () => {
+  it('name and number issue a passkey; the passkey signs in, first as new then as returning', async () => {
     const { svc, store } = setup();
-    const up = await signUp(svc, '  Lakshmi ', 'Mom');
-    expect(up).toMatchObject({ ok: true, created: true, account: { name: 'Lakshmi', relation: 'Mom', phone: PHONE } });
-    expect(JSON.parse(store.data.get('hearth_accounts_v1')!)[PHONE].name).toBe('Lakshmi');
-
-    const r = await svc.requestOtp({ mode: 'sign_in', name: 'lakshmi', phone: PHONE });
-    expect(r).toMatchObject({ ok: true, devCode: '000000' });
-    expect(await svc.verifyOtp(PHONE, '000000')).toMatchObject({ ok: true, created: false, account: { name: 'Lakshmi' } });
+    expect(await svc.requestAccess({ name: '  Lakshmi ', phone: PHONE })).toMatchObject({ ok: true, sandboxPasskey: 'AAAAAAAA' });
+    expect(store.data.get('hearth_accounts_v1')).toBeUndefined();  // no account until the passkey is used
+    expect(await svc.signInWithPasskey({ name: 'lakshmi', phone: PHONE, passkey: KEY }))
+      .toMatchObject({ ok: true, created: true, account: { name: 'Lakshmi', phone: PHONE } });
+    expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: 'aaaaaaaa' }))
+      .toMatchObject({ ok: true, created: false });
   });
 
-  it('only creates the account once the code is right', async () => {
-    const { svc, store } = setup();
-    await svc.requestOtp({ mode: 'sign_up', name: 'Lakshmi', relation: 'Mom', phone: PHONE });
-    expect(store.data.size).toBe(0);
-    expect(await svc.verifyOtp(PHONE, '123456')).toMatchObject({ ok: false, error: 'wrong_code', attemptsLeft: MAX_ATTEMPTS - 1 });
-    expect(store.data.size).toBe(0);
-  });
-
-  it('refuses sign-in for an unknown number or the wrong name, before sending a code', async () => {
+  it('asking again keeps the same passkey', async () => {
     const { svc } = setup();
-    expect(await svc.requestOtp({ mode: 'sign_in', name: 'Lakshmi', phone: PHONE })).toMatchObject({ ok: false, error: 'no_account' });
-    await signUp(svc);
-    expect(await svc.requestOtp({ mode: 'sign_in', name: 'Ravi', phone: PHONE })).toMatchObject({ ok: false, error: 'name_mismatch' });
+    await join(svc);
+    const again = await svc.requestAccess({ name: 'Lakshmi', phone: PHONE });
+    expect(again).toMatchObject({ ok: true, sandboxPasskey: 'AAAAAAAA' });
   });
 
-  it('refuses a second sign-up on the same number', async () => {
+  it('a wrong name, passkey or unknown number all get the same answer', async () => {
     const { svc } = setup();
-    await signUp(svc);
-    expect(await svc.requestOtp({ mode: 'sign_up', name: 'Ravi', relation: 'Dad', phone: PHONE }))
-      .toMatchObject({ ok: false, error: 'account_exists' });
+    expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: KEY })).toMatchObject({ error: 'wrong_details' });
+    await join(svc);
+    expect(await svc.signInWithPasskey({ name: 'Ravi', phone: PHONE, passkey: KEY })).toMatchObject({ error: 'wrong_details' });
+    expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: 'BBBBBBBB' })).toMatchObject({ error: 'wrong_details' });
   });
 
-  it('makes you wait 30 s before resending, then issues a fresh code', async () => {
+  it('locks the number for 15 minutes after too many wrong tries', async () => {
     const { svc, tick } = setup();
-    await svc.requestOtp({ mode: 'sign_up', name: 'Lakshmi', relation: 'Mom', phone: PHONE });
-    tick(RESEND_AFTER_MS - 1);
-    expect(await svc.requestOtp({ mode: 'sign_up', name: 'Lakshmi', relation: 'Mom', phone: PHONE }))
-      .toMatchObject({ ok: false, error: 'resend_too_soon' });
-    tick(1);
-    expect(await svc.requestOtp({ mode: 'sign_up', name: 'Lakshmi', relation: 'Mom', phone: PHONE })).toMatchObject({ ok: true });
+    await svc.requestAccess({ name: 'Lakshmi', phone: PHONE });
+    for (let i = 1; i < MAX_ATTEMPTS; i++) {
+      expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: 'BBBBBBBB' })).toMatchObject({ error: 'wrong_details' });
+    }
+    expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: 'BBBBBBBB' })).toMatchObject({ error: 'locked' });
+    expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: KEY })).toMatchObject({ error: 'locked' });
+    tick(LOCK_MS);
+    expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: KEY })).toMatchObject({ ok: true });
   });
 
-  it('expires a code after 5 minutes', async () => {
-    const { svc, tick } = setup();
-    await svc.requestOtp({ mode: 'sign_up', name: 'Lakshmi', relation: 'Mom', phone: PHONE });
-    tick(OTP_TTL_MS);
-    expect(await svc.verifyOtp(PHONE, '000000')).toMatchObject({ ok: false, error: 'expired' });
-    expect(await svc.verifyOtp(PHONE, '000000')).toMatchObject({ ok: false, error: 'no_code' });
-  });
-
-  it('locks the code after too many wrong tries', async () => {
+  it('needs a name', async () => {
     const { svc } = setup();
-    await svc.requestOtp({ mode: 'sign_up', name: 'Lakshmi', relation: 'Mom', phone: PHONE });
-    for (let i = 1; i < MAX_ATTEMPTS; i++) expect(await svc.verifyOtp(PHONE, '999999')).toMatchObject({ error: 'wrong_code' });
-    expect(await svc.verifyOtp(PHONE, '999999')).toMatchObject({ ok: false, error: 'too_many_attempts' });
-    expect(await svc.verifyOtp(PHONE, '000000')).toMatchObject({ ok: false, error: 'no_code' });
+    expect(await svc.requestAccess({ name: ' ', phone: PHONE })).toMatchObject({ ok: false, error: 'invalid_name' });
   });
 
-  it('forgetAll clears accounts', async () => {
+  it('forgetAll and delete clear accounts and passkeys', async () => {
     const { svc } = setup();
-    await signUp(svc);
+    const r = await join(svc);
+    if (!r.ok) throw new Error(r.error);
+    await svc.deleteAccount(r.account);
+    expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: KEY })).toMatchObject({ error: 'wrong_details' });
+    await join(svc);
     await svc.forgetAll();
-    expect(await svc.requestOtp({ mode: 'sign_in', name: 'Lakshmi', phone: PHONE })).toMatchObject({ ok: false, error: 'no_account' });
+    expect(await svc.signInWithPasskey({ name: 'Lakshmi', phone: PHONE, passkey: KEY })).toMatchObject({ error: 'wrong_details' });
   });
 });
 

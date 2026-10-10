@@ -19,7 +19,7 @@ from sqlmodel import Session
 
 from app.core.sqltypes import utcnow
 
-from . import actions, analytics, diagnostics, queries
+from . import actions, analytics, diagnostics, passkeys, queries
 from .auth import require_admin
 from .db import get_session
 
@@ -47,6 +47,13 @@ class RoleIn(Note):
 
 class AssignIn(Note):
     member_id: str
+
+
+class ApproveIn(BaseModel):
+    household_id: str | None = None
+    """Empty = a new home, with them as its owner."""
+    relation: str | None = None
+    role: str = "member"
 
 
 class FixIn(BaseModel):
@@ -155,6 +162,19 @@ def issues(household_id: str | None = None, s: Session = Depends(get_session)) -
     }
 
 
+@api.get("/passkeys")
+def passkey_overview(s: Session = Depends(get_session)) -> dict[str, Any]:
+    return passkeys.overview(s)
+
+
+@api.get("/passkeys/waiting")
+def passkeys_waiting(s: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    """Polled by every page for the "is trying to sign in" prompt — kept small."""
+
+    return [{"id": r["id"], "name": r["name"], "phone": r["phone"], "last_at": r["last_at"]}
+            for r in passkeys.overview(s)["requests"]]
+
+
 @api.get("/audit")
 def audit(household_id: str | None = None, s: Session = Depends(get_session)) -> list[dict[str, Any]]:
     return queries.audit(s, household_id)
@@ -206,6 +226,24 @@ def post_action(pid: str, op: str, body: Note, admin: str = Depends(require_admi
     if fn is None:
         raise HTTPException(404, f"unknown post action {op}")
     return _write(s, lambda: fn(s, admin, pid, body.note, utcnow()))
+
+
+@api.post("/passkeys/requests/{rid}/approve")
+def passkey_approve(rid: str, body: ApproveIn, admin: str = Depends(require_admin),
+                    s: Session = Depends(get_session)) -> dict[str, Any]:
+    return _write(s, lambda: passkeys.approve(s, admin, rid, body.household_id, body.relation, body.role, utcnow()))
+
+
+@api.post("/passkeys/requests/{rid}/dismiss")
+def passkey_dismiss(rid: str, admin: str = Depends(require_admin),
+                    s: Session = Depends(get_session)) -> dict[str, Any]:
+    return _write(s, lambda: passkeys.dismiss(s, admin, rid, utcnow()))
+
+
+@api.post("/members/{mid}/passkey")
+def member_passkey(mid: str, admin: str = Depends(require_admin),
+                   s: Session = Depends(get_session)) -> dict[str, Any]:
+    return _write(s, lambda: passkeys.issue(s, admin, mid, utcnow()))
 
 
 @api.post("/issues/fix")

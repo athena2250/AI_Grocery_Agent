@@ -1,25 +1,27 @@
 """Sign-in rules over the auth tables. Deterministic; writes are added to the session.
 
-The caller commits — on success *and* on `AuthRefused`, since refusals, wrong codes and
-used-up tries are recorded before the error is raised (the log and the per-code try count
-must survive a refusal).
+The caller commits — on success *and* on `AuthRefused`, since refusals and wrong passkeys are
+recorded before the error is raised (the log and the lockout count must survive a refusal).
 
 Flow (the mobile `AuthService` shapes map onto these):
-  request_code(purpose=sign_up|sign_in, phone, name …) → text `CodeSent.code` to the phone
-  verify_sign_in(...)                                   → `SignedIn.token` goes to the phone
-  authenticate(token)                                   → every request after that
+  request_access(phone, name)                     → a join request for the admin (always "ok")
+  approve_request / issue_passkey                 → admin console: adds them, makes a passkey
+  sign_in_with_passkey(phone, name, passkey)      → `SignedIn.token` goes to the phone
+  authenticate(token)                             → every request after that
   sign_out(token)
 
-Rules (agreed 2026-10-06):
-- The phone is the account. Sign-in needs the name to match it (case and spaces ignored).
-- Sign-up claims a member row the owner already added with that phone (the typed name
-  wins — the code proves the number), or joins a household with a home code, or starts a
-  new household with the person as owner. One household per person.
+Rules (agreed 2026-10-10):
+- No OTP, no self sign-up. The admin adds each person to a home and gives them a passkey
+  ("K7M4-PX9Q": 8 characters, no look-alikes), read out to them in person or on a call.
+- The phone is the account. Sign-in needs number + name (case and spaces ignored) + passkey.
+  Every mismatch gets the same answer, so a stranger learns nothing about a number.
+- 5 wrong tries lock the number for 15 minutes. A new passkey ends the old one and signs that
+  person out everywhere.
+- Asking to join never says whether the number already has a passkey; repeat asks update the
+  one pending request.
 - One signed-in phone per person: signing in elsewhere ends the old session ("replaced").
-- Sessions last until sign-out. Codes: 6 digits, 5 minutes, 5 tries, 30 s between sends,
-  at most 5 sent per number per hour and 10 per day.
-- Home codes: any member can make one; it works for 7 days for any number of people.
-- Retention: used/expired codes deleted after 24 h, the login log after one year (`purge`).
+- Sessions end on sign-out or after 90 days without use.
+- Retention: answered join requests after 30 days, the login log after one year (`purge`).
 """
 
 from __future__ import annotations
@@ -31,11 +33,12 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import lru_cache
 from random import Random
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import and_, delete, or_
+from sqlalchemy import delete, or_
 from sqlmodel import Session, col, func, select
 
 from app.core.models import Household, Member, MemberRole
@@ -45,46 +48,37 @@ from .models import (
     AuthEvent,
     AuthEventKind,
     AuthSession,
-    HouseholdInvite,
-    OtpCode,
-    OtpPurpose,
+    JoinRequest,
+    JoinRequestStatus,
+    MemberPasskey,
     SessionEndReason,
 )
 
-CODE_LENGTH = 6
-CODE_TTL = timedelta(minutes=5)
-RESEND_AFTER = timedelta(seconds=30)
+PASSKEY_LENGTH = 8
+PASSKEY_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+"""No 0/O, 1/I/L — read out over the phone without mix-ups."""
 MAX_ATTEMPTS = 5
-CODES_PER_HOUR = 5
-CODES_PER_DAY = 10
-INVITE_TTL = timedelta(days=7)
-CODE_RETENTION = timedelta(days=1)
+LOCK_FOR = timedelta(minutes=15)
+SESSION_IDLE = timedelta(days=90)
+MAX_PENDING_REQUESTS = 50
+"""Past this, new asks are dropped quietly: nobody can flood the admin's list."""
+REQUEST_RETENTION = timedelta(days=30)
 EVENT_RETENTION = timedelta(days=365)
 
-INVITE_PREFIX = "HRTH-"
-INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-"""No 0/O, 1/I/L — read out over the phone without mix-ups."""
-
 _E164 = re.compile(r"^\+[1-9]\d{7,14}$")
+_SCRYPT = {"n": 2**14, "r": 8, "p": 1, "dklen": 32}
 
 MESSAGES = {
     "invalid_phone": "That doesn’t look like a mobile number.",
     "invalid_name": "Please tell us your name.",
-    "invalid_relation": "Please choose who you are at home.",
-    "no_account": "There’s no account for this number yet. Sign up instead?",
-    "account_exists": "This number already has an account. Sign in instead?",
-    "removed": "This number was taken out of its home. Ask someone there to add it again.",
-    "name_mismatch": "That name doesn’t match the account for this number.",
-    "invalid_invite": "That home code isn’t working. It may have expired — ask for a new one.",
-    "phone_in_other_home": "This number already belongs to another home.",
-    "phone_taken": "Someone already uses this number.",
-    "rate_limited": "Too many codes for this number. Please try again later.",
-    "resend_too_soon": "Please wait a moment before asking for another code.",
-    "no_code": "Ask for a code first.",
-    "expired": "That code has expired. Send a new one.",
-    "wrong_code": "That code isn’t right. Check it and try again.",
-    "too_many_attempts": "Too many tries. Send a new code.",
+    "invalid_passkey": f"The passkey has {PASSKEY_LENGTH} letters and numbers.",
+    "wrong_details": "Those details don’t match. Check your name, number and passkey.",
+    "locked": "Too many tries. Wait 15 minutes, or ask the admin for a new passkey.",
+    "rate_limited": "Too many tries. Please try again later.",
     "not_allowed": "You can’t do that for this home.",
+    "not_pending": "That request was already answered.",
+    "removed": "This person was taken out of their home. Restore them first.",
+    "no_home": "That home doesn’t exist.",
 }
 
 
@@ -97,21 +91,13 @@ class AuthRefused(Exception):
 
 
 @dataclass(frozen=True)
-class CodeSent:
-    code: str
-    """Text this to the phone. Never store or log it."""
-    expires_at: datetime
-    resend_after: datetime
-
-
-@dataclass(frozen=True)
 class SignedIn:
     member: Member
     session: AuthSession
     token: str
     """Given to the phone once; only its hash is stored."""
     created: bool
-    """True when this was a sign-up."""
+    """True on this person's first sign-in."""
     replaced: AuthSession | None
     """The other phone this sign-in signed out, if any."""
 
@@ -142,23 +128,45 @@ def _secret() -> bytes:
     return os.environ.get("AUTH_SECRET", "dev-only-change-me").encode()
 
 
-def hash_code(phone: str, purpose: OtpPurpose, code: str) -> str:
-    """HMAC, not a bare hash: six digits are trivial to brute-force without the secret."""
+def normalize_passkey(typed: str) -> str:
+    """"k7m4 - px9q" → "K7M4PX9Q"."""
 
-    return hmac.new(_secret(), f"{purpose.value}:{phone}:{code}".encode(), hashlib.sha256).hexdigest()
+    return re.sub(r"[^A-Za-z0-9]", "", typed).upper()
+
+
+def format_passkey(passkey: str) -> str:
+    """"K7M4PX9Q" → "K7M4-PX9Q", as shown to the admin and typed on the phone."""
+
+    k = normalize_passkey(passkey)
+    return f"{k[:4]}-{k[4:]}"
+
+
+def hash_passkey(passkey: str, salt: bytes | None = None) -> str:
+    """Slow on purpose (scrypt), salted per person, peppered with AUTH_SECRET."""
+
+    salt = salt if salt is not None else secrets.token_bytes(16)
+    dk = hashlib.scrypt(normalize_passkey(passkey).encode(), salt=salt + _secret(), **_SCRYPT)
+    return f"scrypt${salt.hex()}${dk.hex()}"
+
+
+def passkey_matches(stored: str, typed: str) -> bool:
+    try:
+        _, salt_hex, _ = stored.split("$")
+        expected = hash_passkey(typed, bytes.fromhex(salt_hex))
+    except ValueError:
+        return False
+    return hmac.compare_digest(stored, expected)
+
+
+@lru_cache(maxsize=1)
+def _decoy() -> str:
+    """Checked against when there is no passkey, so an unknown number answers just as slowly."""
+
+    return hash_passkey("decoy")
 
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
-
-
-def normalize_invite(code: str) -> str:
-    """"hrth 4k9p", "4K9P" → "HRTH-4K9P"."""
-
-    raw = re.sub(r"[^A-Za-z0-9]", "", code).upper()
-    if raw.startswith(INVITE_PREFIX[:-1]):
-        raw = raw[len(INVITE_PREFIX) - 1:]
-    return INVITE_PREFIX + raw
 
 
 def _id(prefix: str) -> str:
@@ -177,9 +185,8 @@ def _log(s: Session, kind: AuthEventKind, now: datetime, *, phone: str | None = 
 
 
 def _refuse(s: Session, now: datetime, error: str, *, phone: str | None = None,
-            member: Member | None = None, purpose: OtpPurpose | None = None, **detail: Any):
-    _log(s, AuthEventKind.REFUSED, now, phone=phone, member=member, error=error,
-         **({"purpose": purpose.value} if purpose else {}))
+            member: Member | None = None, **detail: Any):
+    _log(s, AuthEventKind.REFUSED, now, phone=phone, member=member, error=error)
     raise AuthRefused(error, **detail)
 
 
@@ -188,31 +195,9 @@ def member_by_phone(s: Session, phone: str) -> Member | None:
 
 
 def has_joined(s: Session, member_id: str) -> bool:
-    """Has this person ever signed in? Before that, the row is an invite the owner made."""
+    """Has this person ever signed in?"""
 
     return s.exec(select(AuthSession.id).where(AuthSession.member_id == member_id)).first() is not None
-
-
-def _open_code(s: Session, phone: str, purpose: OtpPurpose) -> OtpCode | None:
-    return s.exec(
-        select(OtpCode)
-        .where(OtpCode.phone == phone, OtpCode.purpose == purpose, col(OtpCode.consumed_at).is_(None))
-        .order_by(col(OtpCode.sent_at).desc())
-    ).first()
-
-
-def _codes_sent_since(s: Session, phone: str, since: datetime) -> int:
-    return s.exec(
-        select(func.count()).select_from(AuthEvent)
-        .where(AuthEvent.phone == phone, AuthEvent.kind == AuthEventKind.CODE_SENT, AuthEvent.at > since)
-    ).one()
-
-
-def _valid_invite(s: Session, code: str, now: datetime) -> HouseholdInvite | None:
-    inv = s.exec(select(HouseholdInvite).where(HouseholdInvite.code == normalize_invite(code))).first()
-    if inv is None or inv.revoked_at is not None or now >= as_utc(inv.expires_at):
-        return None
-    return inv
 
 
 def _active_session(s: Session, member_id: str) -> AuthSession | None:
@@ -227,162 +212,162 @@ def _end(s: Session, row: AuthSession, reason: SessionEndReason, now: datetime) 
     s.add(row)
 
 
-# ---------------------------------------------------------------- codes
+def _pending_for(s: Session, phone: str) -> JoinRequest | None:
+    return s.exec(select(JoinRequest).where(
+        JoinRequest.phone == phone, JoinRequest.status == JoinRequestStatus.PENDING)).first()
 
-def request_code(
-    s: Session, *, purpose: OtpPurpose, phone: str, now: datetime, name: str | None = None,
-    relation: str | None = None, invite_code: str | None = None, member_id: str | None = None,
-    rng: Random | None = None,
-) -> CodeSent:
-    """Checks the person may have a code, then makes one. `member_id` is for change_phone."""
+
+# ---------------------------------------------------------------- asking to join
+
+def request_access(s: Session, *, phone: str, name: str, now: datetime) -> None:
+    """Name + number from a phone → the admin's list. The answer is the same whether or not the
+    number already has a passkey; only the typing itself (bad number, no name) is refused."""
 
     now = as_utc(now)
     if not _E164.match(phone):
-        _refuse(s, now, "invalid_phone", purpose=purpose)
-    if (_codes_sent_since(s, phone, now - timedelta(hours=1)) >= CODES_PER_HOUR
-            or _codes_sent_since(s, phone, now - timedelta(days=1)) >= CODES_PER_DAY):
-        _refuse(s, now, "rate_limited", phone=phone, purpose=purpose)
-    prev = _open_code(s, phone, purpose)
-    if prev is not None and now < as_utc(prev.resend_after):
-        _refuse(s, now, "resend_too_soon", phone=phone, purpose=purpose, resend_after=as_utc(prev.resend_after))
+        raise AuthRefused("invalid_phone")
+    if not clean_name(name):
+        raise AuthRefused("invalid_name")
+    member = member_by_phone(s, phone)
+    if member is not None and s.get(MemberPasskey, member.id) is not None:
+        return  # already set up: they only need the passkey they have
+    pending = _pending_for(s, phone)
+    if pending is not None:
+        pending.name, pending.last_at, pending.times = clean_name(name), now, pending.times + 1
+        s.add(pending)
+        return
+    waiting = s.exec(select(func.count()).select_from(JoinRequest)
+                     .where(JoinRequest.status == JoinRequestStatus.PENDING)).one()
+    if waiting >= MAX_PENDING_REQUESTS:
+        return
+    s.add(JoinRequest(id=_id("jr"), phone=phone, name=clean_name(name), first_at=now, last_at=now))
 
-    existing = member_by_phone(s, phone)
-    who: Member | None = existing
-    invite: HouseholdInvite | None = None
 
-    if purpose is OtpPurpose.SIGN_IN:
-        if not clean_name(name):
-            _refuse(s, now, "invalid_name", phone=phone, purpose=purpose)
-        if existing is None:
-            _refuse(s, now, "no_account", phone=phone, purpose=purpose)
-        assert existing is not None
-        if not existing.is_active:
-            _refuse(s, now, "removed", phone=phone, member=existing, purpose=purpose)
-        if name_key(existing.name) != name_key(name or ""):
-            _refuse(s, now, "name_mismatch", phone=phone, member=existing, purpose=purpose)
+def pending_requests(s: Session) -> list[JoinRequest]:
+    return list(s.exec(select(JoinRequest).where(JoinRequest.status == JoinRequestStatus.PENDING)
+                       .order_by(col(JoinRequest.last_at).desc())).all())
 
-    elif purpose is OtpPurpose.SIGN_UP:
-        if not clean_name(name):
-            _refuse(s, now, "invalid_name", phone=phone, purpose=purpose)
-        if existing is not None and not existing.is_active:
-            _refuse(s, now, "removed", phone=phone, member=existing, purpose=purpose)
-        if existing is not None and has_joined(s, existing.id):
-            _refuse(s, now, "account_exists", phone=phone, member=existing, purpose=purpose)
-        if not clean_name(relation) and not (existing and existing.relation):
-            _refuse(s, now, "invalid_relation", phone=phone, purpose=purpose)
-        if invite_code:
-            invite = _valid_invite(s, invite_code, now)
-            if invite is None:
-                _refuse(s, now, "invalid_invite", phone=phone, purpose=purpose)
-            assert invite is not None
-            if existing is not None and existing.household_id != invite.household_id:
-                _refuse(s, now, "phone_in_other_home", phone=phone, member=existing, purpose=purpose)
 
-    else:  # change_phone
-        who = s.get(Member, member_id) if member_id else None
-        if who is None or not who.is_active:
-            _refuse(s, now, "no_account", phone=phone, purpose=purpose)
-        if existing is not None:
-            _refuse(s, now, "phone_taken", phone=phone, member=who, purpose=purpose)
+# ---------------------------------------------------------------- admin: passkeys
 
-    if prev is not None:
-        s.delete(prev)  # a new code replaces the old one
+def issue_passkey(s: Session, *, member_id: str, now: datetime, by: str, rng: Random | None = None) -> str:
+    """A new passkey for this person; returns it (shown to the admin once, never stored).
+    Replacing one ends the old passkey and signs them out everywhere."""
+
+    now = as_utc(now)
+    member = s.get(Member, member_id)
+    if member is None:
+        raise AuthRefused("not_allowed")
+    if not member.is_active:
+        raise AuthRefused("removed")
     r = rng or secrets.SystemRandom()
-    code = "".join(str(r.randrange(10)) for _ in range(CODE_LENGTH))
-    row = OtpCode(
-        id=_id("otp"), phone=phone, purpose=purpose, code_hash=hash_code(phone, purpose, code),
-        member_id=who.id if purpose is OtpPurpose.CHANGE_PHONE and who else None,
-        pending_name=clean_name(name) if purpose is OtpPurpose.SIGN_UP else None,
-        pending_relation=clean_name(relation) or None if purpose is OtpPurpose.SIGN_UP else None,
-        invite_id=invite.id if invite else None,
-        sent_at=now, expires_at=now + CODE_TTL, resend_after=now + RESEND_AFTER, attempts_left=MAX_ATTEMPTS,
-    )
-    s.add(row)
-    _log(s, AuthEventKind.CODE_SENT, now, phone=phone, member=who, purpose=purpose.value)
-    return CodeSent(code=code, expires_at=row.expires_at, resend_after=row.resend_after)
-
-
-def _consume(s: Session, phone: str, purpose: OtpPurpose, code: str, now: datetime) -> OtpCode:
-    row = _open_code(s, phone, purpose)
+    passkey = "".join(r.choice(PASSKEY_ALPHABET) for _ in range(PASSKEY_LENGTH))
+    row = s.get(MemberPasskey, member_id)
     if row is None:
-        _refuse(s, now, "no_code", phone=phone, purpose=purpose)
-    assert row is not None
-    if now >= as_utc(row.expires_at):
-        row.consumed_at = now
-        s.add(row)
-        _log(s, AuthEventKind.CODE_EXPIRED, now, phone=phone, purpose=purpose.value)
-        raise AuthRefused("expired")
-    if not hmac.compare_digest(row.code_hash, hash_code(phone, purpose, re.sub(r"\D", "", code))):
-        row.attempts_left = max(0, row.attempts_left - 1)
-        if row.attempts_left == 0:
-            row.consumed_at = now
-            s.add(row)
-            _log(s, AuthEventKind.CODE_LOCKED, now, phone=phone, purpose=purpose.value)
-            raise AuthRefused("too_many_attempts")
-        s.add(row)
-        _log(s, AuthEventKind.CODE_FAILED, now, phone=phone, purpose=purpose.value,
-             attempts_left=row.attempts_left)
-        raise AuthRefused("wrong_code", attempts_left=row.attempts_left)
-    row.consumed_at = now
+        row = MemberPasskey(member_id=member_id, passkey_hash=hash_passkey(passkey), issued_at=now, issued_by=by)
+    else:
+        row.passkey_hash, row.issued_at, row.issued_by = hash_passkey(passkey), now, by
+        row.failed_attempts, row.locked_until = 0, None
+        revoke_member_sessions(s, member_id, now, SessionEndReason.SIGNED_OUT)
     s.add(row)
-    return row
+    # Anything they were waiting on is answered now.
+    if member.phone and (pending := _pending_for(s, member.phone)) is not None:
+        _resolve(s, pending, JoinRequestStatus.APPROVED, now, by, member.id)
+    return passkey
 
 
-# ---------------------------------------------------------------- sign in / up
+def _resolve(s: Session, req: JoinRequest, status: JoinRequestStatus, now: datetime, by: str,
+             member_id: str | None = None) -> None:
+    req.status, req.resolved_at, req.resolved_by, req.member_id = status, now, by, member_id
+    s.add(req)
 
-def verify_sign_in(
-    s: Session, *, purpose: OtpPurpose, phone: str, code: str, now: datetime,
+
+def approve_request(
+    s: Session, *, request_id: str, now: datetime, by: str, household_id: str | None = None,
+    relation: str | None = None, role: MemberRole = MemberRole.MEMBER, rng: Random | None = None,
+) -> tuple[Member, str]:
+    """Adds the person who asked (to `household_id`, or a new home with them as owner) and issues
+    their passkey. A number that already belongs to someone keeps that person and their home."""
+
+    now = as_utc(now)
+    req = s.get(JoinRequest, request_id)
+    if req is None or req.status is not JoinRequestStatus.PENDING:
+        raise AuthRefused("not_pending")
+    member = member_by_phone(s, req.phone)
+    if member is not None:
+        if not member.is_active:
+            raise AuthRefused("removed")
+        if clean_name(relation):
+            member.relation = clean_name(relation)
+            s.add(member)
+    else:
+        if household_id:
+            if s.get(Household, household_id) is None:
+                raise AuthRefused("no_home")
+        else:
+            household = Household(id=_id("h"), name=f"{req.name}’s home")
+            s.add(household)
+            household_id, role = household.id, MemberRole.OWNER
+        member = Member(id=_id("m"), household_id=household_id, name=req.name,
+                        relation=clean_name(relation) or None, phone=req.phone, role=role)
+        s.add(member)
+        s.flush()
+    passkey = issue_passkey(s, member_id=member.id, now=now, by=by, rng=rng)
+    _resolve(s, req, JoinRequestStatus.APPROVED, now, by, member.id)
+    return member, passkey
+
+
+def dismiss_request(s: Session, *, request_id: str, now: datetime, by: str) -> JoinRequest:
+    req = s.get(JoinRequest, request_id)
+    if req is None or req.status is not JoinRequestStatus.PENDING:
+        raise AuthRefused("not_pending")
+    _resolve(s, req, JoinRequestStatus.DISMISSED, as_utc(now), by)
+    return req
+
+
+# ---------------------------------------------------------------- signing in
+
+def sign_in_with_passkey(
+    s: Session, *, phone: str, name: str, passkey: str, now: datetime,
     device_id: str | None = None, device_label: str | None = None,
 ) -> SignedIn:
-    """The code is right → the account (new for sign-up) gets this phone's session."""
+    """Number + name + passkey → this phone's session. Any mismatch is "wrong_details"."""
 
-    if purpose is OtpPurpose.CHANGE_PHONE:
-        raise ValueError("use verify_phone_change")
     now = as_utc(now)
-    row = _consume(s, phone, purpose, code, now)
-    member = member_by_phone(s, phone)
-    created = purpose is OtpPurpose.SIGN_UP
+    if not clean_name(name):
+        raise AuthRefused("invalid_name")
+    if len(normalize_passkey(passkey)) != PASSKEY_LENGTH:
+        raise AuthRefused("invalid_passkey")
+    member = member_by_phone(s, phone) if _E164.match(phone) else None
+    row = s.get(MemberPasskey, member.id) if member is not None else None
 
-    if purpose is OtpPurpose.SIGN_IN:
-        if member is None or not member.is_active:
-            _refuse(s, now, "no_account", phone=phone, purpose=purpose)
-        assert member is not None
-    else:
-        # Re-checked: things can change in the five minutes the code was out.
-        if member is not None and (has_joined(s, member.id) or not member.is_active):
-            _refuse(s, now, "account_exists", phone=phone, member=member, purpose=purpose)
-        invite = s.get(HouseholdInvite, row.invite_id) if row.invite_id else None
-        if row.invite_id and (invite is None or _valid_invite(s, invite.code, now) is None):
-            _refuse(s, now, "invalid_invite", phone=phone, purpose=purpose)
-        if member is not None and invite is not None and member.household_id != invite.household_id:
-            _refuse(s, now, "phone_in_other_home", phone=phone, member=member, purpose=purpose)
-        name = row.pending_name or ""
+    if row is not None and row.locked_until is not None and now < as_utc(row.locked_until):
+        _refuse(s, now, "locked", phone=phone, member=member, locked_until=as_utc(row.locked_until))
 
-        if member is not None:
-            # The owner added this number already: claim that row. The typed name wins.
-            member.name = name
-            member.relation = row.pending_relation or member.relation
-            s.add(member)
-            how = "claimed"
-        elif invite is not None:
-            member = Member(id=_id("m"), household_id=invite.household_id, name=name,
-                            relation=row.pending_relation, phone=phone, role=MemberRole.MEMBER)
-            s.add(member)
-            invite.uses += 1
-            s.add(invite)
-            _log(s, AuthEventKind.INVITE_USED, now, phone=phone, household_id=invite.household_id,
-                 invite_id=invite.id)
-            how = "invite"
-        else:
-            household = Household(id=_id("h"), name=f"{name}’s home")
-            s.add(household)
-            member = Member(id=_id("m"), household_id=household.id, name=name,
-                            relation=row.pending_relation, phone=phone, role=MemberRole.OWNER)
-            s.add(member)
-            how = "new_home"
-        s.flush()
-        _log(s, AuthEventKind.SIGNED_UP, now, phone=phone, member=member, how=how)
+    right_key = passkey_matches(row.passkey_hash if row is not None else _decoy(), passkey)
+    ok = (row is not None and member is not None and member.is_active and right_key
+          and name_key(member.name) == name_key(name))
+    if not ok:
+        if row is None:
+            _refuse(s, now, "wrong_details", phone=phone, member=member)
+        assert row is not None
+        row.failed_attempts += 1
+        if row.failed_attempts >= MAX_ATTEMPTS:
+            row.failed_attempts, row.locked_until = 0, now + LOCK_FOR
+            s.add(row)
+            _log(s, AuthEventKind.PASSKEY_LOCKED, now, phone=phone, member=member)
+            raise AuthRefused("locked", locked_until=row.locked_until)
+        s.add(row)
+        _log(s, AuthEventKind.PASSKEY_FAILED, now, phone=phone, member=member,
+             attempts_left=MAX_ATTEMPTS - row.failed_attempts)
+        raise AuthRefused("wrong_details")
 
+    assert member is not None and row is not None
+    row.failed_attempts, row.locked_until = 0, None
+    s.add(row)
+    created = not has_joined(s, member.id)
+    if created:
+        _log(s, AuthEventKind.SIGNED_UP, now, phone=phone, member=member, how="passkey")
     session, token, replaced = _start_session(s, member, now, device_id, device_label)
     return SignedIn(member=member, session=session, token=token, created=created, replaced=replaced)
 
@@ -414,6 +399,10 @@ def authenticate(s: Session, token: str, now: datetime) -> SessionCheck:
     member = s.get(Member, row.member_id)
     if row.revoked_at is None and (member is None or not member.is_active):
         _end(s, row, SessionEndReason.REMOVED, now)
+    elif row.revoked_at is None and now - as_utc(row.last_seen_at) > SESSION_IDLE:
+        _end(s, row, SessionEndReason.SIGNED_OUT, now)  # a lost or forgotten phone
+        _log(s, AuthEventKind.SESSIONS_REVOKED, now, phone=member.phone if member else None,
+             member=member, session_id=row.id, reason="idle")
     if row.revoked_at is not None:
         now_on = None
         if row.revoked_reason is SessionEndReason.REPLACED and (current := _active_session(s, row.member_id)):
@@ -438,7 +427,7 @@ def sign_out(s: Session, token: str, now: datetime) -> bool:
 
 def revoke_member_sessions(s: Session, member_id: str, now: datetime,
                            reason: SessionEndReason = SessionEndReason.REMOVED) -> int:
-    """Someone was taken out of the home (set `member.is_active = False` too)."""
+    """Someone was taken out of the home (set `member.is_active = False` too), or got a new passkey."""
 
     now = as_utc(now)
     rows = s.exec(
@@ -451,76 +440,19 @@ def revoke_member_sessions(s: Session, member_id: str, now: datetime,
     return len(rows)
 
 
-# ---------------------------------------------------------------- phone change
-
-def verify_phone_change(s: Session, *, member_id: str, phone: str, code: str, now: datetime) -> Member:
-    """The code sent to the new number is right → it becomes the sign-in number."""
-
-    now = as_utc(now)
-    row = _consume(s, phone, OtpPurpose.CHANGE_PHONE, code, now)
-    member = s.get(Member, member_id)
-    if member is None or row.member_id != member_id or not member.is_active:
-        _refuse(s, now, "not_allowed", phone=phone, purpose=OtpPurpose.CHANGE_PHONE)
-    assert member is not None
-    if member_by_phone(s, phone) is not None:
-        _refuse(s, now, "phone_taken", phone=phone, member=member, purpose=OtpPurpose.CHANGE_PHONE)
-    old = member.phone
-    member.phone = phone
-    s.add(member)
-    _log(s, AuthEventKind.PHONE_CHANGED, now, phone=phone, member=member, old_phone=old)
-    return member
-
-
-# ---------------------------------------------------------------- home codes
-
-def create_invite(s: Session, *, member_id: str, now: datetime, rng: Random | None = None) -> HouseholdInvite:
-    """Any member of the home can make a code; it works for 7 days, for anyone."""
-
-    now = as_utc(now)
-    member = s.get(Member, member_id)
-    if member is None or not member.is_active:
-        _refuse(s, now, "not_allowed")
-    assert member is not None
-    r = rng or secrets.SystemRandom()
-    while True:
-        code = INVITE_PREFIX + "".join(r.choice(INVITE_ALPHABET) for _ in range(4))
-        if s.exec(select(HouseholdInvite.id).where(HouseholdInvite.code == code)).first() is None:
-            break
-    inv = HouseholdInvite(id=_id("inv"), household_id=member.household_id, code=code,
-                          created_by_member_id=member.id, created_at=now, expires_at=now + INVITE_TTL)
-    s.add(inv)
-    s.flush()
-    _log(s, AuthEventKind.INVITE_CREATED, now, member=member, invite_id=inv.id)
-    return inv
-
-
-def revoke_invite(s: Session, *, invite_id: str, member_id: str, now: datetime) -> HouseholdInvite:
-    now = as_utc(now)
-    inv = s.get(HouseholdInvite, invite_id)
-    member = s.get(Member, member_id)
-    if inv is None or member is None or not member.is_active or member.household_id != inv.household_id:
-        _refuse(s, now, "not_allowed")
-    assert inv is not None
-    if inv.revoked_at is None:
-        inv.revoked_at = now
-        s.add(inv)
-        _log(s, AuthEventKind.INVITE_REVOKED, now, member=member, invite_id=inv.id)
-    return inv
-
-
 # ---------------------------------------------------------------- retention
 
 def purge(s: Session, now: datetime) -> dict[str, int]:
-    """Daily job: used/expired codes after 24 h, login log after a year."""
+    """Daily job: join requests 30 days after they were answered (or last asked), the log after a year."""
 
     now = as_utc(now)
-    cutoff = now - CODE_RETENTION
-    codes = s.execute(delete(OtpCode).where(or_(
-        and_(col(OtpCode.consumed_at).is_not(None), col(OtpCode.consumed_at) < cutoff),
-        and_(col(OtpCode.consumed_at).is_(None), col(OtpCode.expires_at) < cutoff),
+    cutoff = now - REQUEST_RETENTION
+    requests = s.execute(delete(JoinRequest).where(or_(
+        col(JoinRequest.resolved_at) < cutoff,
+        (col(JoinRequest.status) == JoinRequestStatus.PENDING) & (col(JoinRequest.last_at) < cutoff),
     )))
     events = s.execute(delete(AuthEvent).where(col(AuthEvent.at) < now - EVENT_RETENTION))
-    return {"otp_code": codes.rowcount, "auth_event": events.rowcount}  # type: ignore[attr-defined]
+    return {"join_request": requests.rowcount, "auth_event": events.rowcount}  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------- account deletion
@@ -531,9 +463,9 @@ DELETED_NAME = "Former member"
 def delete_account(s: Session, *, member_id: str, now: datetime) -> bool:
     """"Delete my account" (App Store / Play rule). The row stays for the home's history
     (who added what) but no longer names or reaches the person: name, relation and number
-    are cleared, every session ends, and their codes and logged numbers go. An owner's role
-    passes to the longest-standing member left. Returns True when nobody is left in the home,
-    so the caller can drop the home's shared data too.
+    are cleared, every session ends, and their passkey, join requests and logged numbers go.
+    An owner's role passes to the longest-standing member left. Returns True when nobody is
+    left in the home, so the caller can drop the home's shared data too.
     """
 
     now = as_utc(now)
@@ -542,8 +474,9 @@ def delete_account(s: Session, *, member_id: str, now: datetime) -> bool:
         _refuse(s, now, "not_allowed")
     assert member is not None
     revoke_member_sessions(s, member.id, now, SessionEndReason.REMOVED)
+    s.execute(delete(MemberPasskey).where(col(MemberPasskey.member_id) == member.id))
     if member.phone:
-        s.execute(delete(OtpCode).where(col(OtpCode.phone) == member.phone))
+        s.execute(delete(JoinRequest).where(col(JoinRequest.phone) == member.phone))
     for ev in s.exec(select(AuthEvent).where(
             or_(col(AuthEvent.member_id) == member.id, col(AuthEvent.phone) == member.phone))):
         ev.phone = None
@@ -562,11 +495,6 @@ def delete_account(s: Session, *, member_id: str, now: datetime) -> bool:
     if was_owner and others:
         others[0].role = MemberRole.OWNER
         s.add(others[0])
-    if not others:
-        for inv in s.exec(select(HouseholdInvite).where(
-                HouseholdInvite.household_id == member.household_id, col(HouseholdInvite.revoked_at).is_(None))):
-            inv.revoked_at = now
-            s.add(inv)
     _log(s, AuthEventKind.SESSIONS_REVOKED, now, household_id=member.household_id,
          member=member, reason="account_deleted")
     return not others

@@ -73,16 +73,19 @@ Each alert sent is a `reminder_log` row.
 | `device` | Expo push token per phone, for the pop-up |
 
 ### Sign-in — `app/auth/models.py`, rules in `app/auth/store.py`
-No account table: `member` is the account, `member.phone` (unique E.164) the key. Sign-up claims a
-member row the owner already added with that phone (the typed name wins), joins via a home code, or
-starts a new household with the person as owner. One household per person.
+No account table: `member` is the account, `member.phone` (unique E.164) the key. No self sign-up and
+no OTP: a person asks with name + number (`join_request`), the admin adds them to a home and issues a
+passkey (admin console → Passkey Issue), and number + name + passkey signs them in. One household per person.
 
 | table | purpose |
 |---|---|
-| `otp_code` | a sent code: phone, purpose sign_in/sign_up/change_phone, HMAC of the code (never the code), expires 5 min, resend after 30 s, 5 tries, pending sign-up name/relation/invite; deleted 24 h after use or expiry |
-| `auth_session` | the signed-in phone: token hash, device, last_seen; lasts until sign-out; **one active per member** (partial unique index) — signing in elsewhere revokes the old one (`replaced`) |
-| `household_invite` | home code `HRTH-XXXX`: any member makes one, 7 days, unlimited uses, revocable |
-| `auth_event` | login log: code sent/failed/locked/expired, refused (+ why), signed up/in/out, replaced, phone changed, invite created/used/revoked; kept 1 year; rate limit (5 codes/hour, 10/day per number) counts it |
+| `join_request` | someone asked to join from a phone: name, phone, first/last asked, times; pending → approved (`member_id`) or dismissed, with who answered; at most 50 pending; deleted 30 days after answered |
+| `member_passkey` | one per member: scrypt hash of the passkey (salted, peppered with `AUTH_SECRET`; never the passkey), issued at/by, failed tries, locked until (5 wrong → 15 min) |
+| `auth_session` | the signed-in phone: token hash, device, last_seen; lasts until sign-out or 90 days unused; **one active per member** (partial unique index) — signing in elsewhere revokes the old one (`replaced`); a new passkey revokes it too |
+| `auth_event` | login log: wrong passkey / locked (stored as the historic values `code_failed` / `code_locked`), refused (+ why), signed up/in/out, replaced, sessions revoked; kept 1 year |
+
+`otp_code` and `household_invite` (the OTP release) are no longer in the models. Existing databases keep
+them, unused; drop them by hand when convenient.
 
 ### Catalog — `app/core/models.py`, `app/pricing/models.py`
 | table | purpose |
@@ -131,8 +134,9 @@ Predictions, budget estimates, price-history view — computed on read. No vecto
 ```
 household 1─┬─* member 1─┬─* device
             │            ├─* auth_session ─▶ device      (≤ 1 active)
-            │            └─* auth_event
-            ├─* household_invite ◀─ otp_code.invite_id
+            │            ├─* auth_event
+            │            └─1 member_passkey
+            │                join_request ─▶ member   (once approved)
             ├─* post ─┬─* post_recipient ─▶ member
             │         ├─* post_comment
             │         └─* reminder ─* reminder_log

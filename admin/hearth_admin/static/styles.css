@@ -176,3 +176,18 @@ pre.json { font: 12px/1.4 ui-monospace, Menlo, monospace; background: var(--bg);
   .issue { grid-template-columns: 1fr; gap: 6px; }
   .kv { grid-template-columns: 1fr; }
 }
+
+/* Passkey Issue */
+.wait-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 16px;
+  border-radius: 12px; background: var(--warn-wash); color: var(--ink); border: 1px solid var(--warn); }
+.wait-banner .go { margin-left: auto; color: var(--accent); font-weight: 500; white-space: nowrap; }
+.key { font-size: 20px; line-height: 1; }
+.req { border: 1px solid var(--hair); border-radius: 12px; padding: 14px; background: var(--bg); margin-top: 12px; }
+.req-who { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
+.req-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.req-form label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.req .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.passkey-big { font: 600 40px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 4px; text-align: center;
+  padding: 18px 8px; margin: 12px 0 4px; border: 1px dashed var(--border); border-radius: 12px;
+  background: var(--bg); color: var(--ink); user-select: all; }
+.modal input[type=text] { width: 100%; }

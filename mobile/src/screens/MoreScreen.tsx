@@ -22,7 +22,7 @@ export function MoreScreen({ navigation }: { navigation: any }) {
   const { archive, taskPrefs } = useTasks();
   const { account, signOut } = useAuth();
   const { ask } = useUI();
-  const { confirmSignOut, inviteFamily, confirmDelete, canInvite } = useAccountActions();
+  const { confirmSignOut, confirmDelete } = useAccountActions();
 
   const low = state.inventory.filter((i) => i.state !== 'available').length;
   const rows = [
@@ -62,15 +62,6 @@ export function MoreScreen({ navigation }: { navigation: any }) {
         </View>
 
         <SectionHeading title="Account" />
-        {canInvite ? (
-          <Pressable onPress={inviteFamily} style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Invite family</Text>
-              <Text style={styles.desc}>A home code so others join and share the lists</Text>
-            </View>
-            <Text style={styles.chev}>›</Text>
-          </Pressable>
-        ) : null}
         <Pressable onPress={confirmSignOut} style={styles.row}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.title, { color: c.accent }]}>Sign out</Text>

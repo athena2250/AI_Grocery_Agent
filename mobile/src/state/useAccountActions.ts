@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { Share } from 'react-native';
 import { useAuth } from './AuthContext';
 import { useHousehold } from './HouseholdContext';
 import { useProfile } from './ProfileContext';
@@ -8,7 +7,7 @@ import { getAuthService } from '../services/serviceFactory';
 import { theme } from '../theme';
 
 /**
- * Sign out, invite family, delete my account — the same from More and from
+ * Sign out, delete my account — the same from More and from
  * your profile. Signed in to the server, signing out also forgets this phone's
  * copy of the family's lists (they are safe on the server); in the sandbox the
  * lists stay on the phone as before.
@@ -27,23 +26,10 @@ export function useAccountActions() {
   const confirmSignOut = useCallback(() => ask({
     title: 'Sign out?',
     body: shared
-      ? 'Your family’s lists stay safe. Sign in again with your name, number and a code to see them.'
-      : 'Your home’s lists and memory stay on this phone. Sign in again with your name, number and a code.',
+      ? 'Your family’s lists stay safe. Sign in again with your name, number and passkey to see them.'
+      : 'Your home’s lists and memory stay on this phone. Sign in again with your name, number and passkey.',
     options: [{ label: 'Sign out', kind: 'danger', onPress: leave }],
   }), [ask, shared, leave]);
-
-  const inviteFamily = useCallback(async () => {
-    const r = await getAuthService().createInvite(token);
-    if (!r) return;
-    if ('error' in r) { flash(r.message, theme.colors.red); return; }
-    const message = `Join our home on Hearth: install the app, tap "Create an account", and enter the home code ${r.code}. It works for 7 days.`;
-    ask({
-      title: `Home code: ${r.code}`,
-      body: 'Anyone who signs up with this code joins your home and sees its lists and tasks. It works for 7 days.',
-      options: [{ label: 'Share code', kind: 'accent', onPress: () => { Share.share({ message }).catch(() => {}); } }],
-      cancelLabel: 'Done',
-    });
-  }, [token, ask, flash]);
 
   const confirmDelete = useCallback(() => {
     if (!account) return;
@@ -71,5 +57,5 @@ export function useAccountActions() {
     });
   }, [account, token, shared, ask, flash, reset, resetProfile, signOut, forgetMe]);
 
-  return { confirmSignOut, inviteFamily, confirmDelete, canInvite: shared };
+  return { confirmSignOut, confirmDelete };
 }
