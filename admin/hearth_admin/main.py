@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -280,5 +280,12 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
+def index() -> HTMLResponse:
+    """The page, with each file's address carrying its version, so a browser holding an old copy
+    has to fetch the new one."""
+
+    html = (STATIC / "index.html").read_text()
+    for name in ("app.js", "styles.css"):
+        version = int((STATIC / name).stat().st_mtime)
+        html = html.replace(f"/static/{name}", f"/static/{name}?v={version}")
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
