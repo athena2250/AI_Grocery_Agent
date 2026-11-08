@@ -17,7 +17,7 @@
     "android": {
       "package": "com.rithvikat.hearth",
       "adaptiveIcon": {
-        "backgroundColor": "#9C4A2F",
+        "backgroundColor": "#25221D",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
