@@ -51,6 +51,25 @@ def bearer(token):
     return {"Authorization": f"Bearer {token}"}
 
 
+def test_local_web_preflight_allows_authenticated_requests(client):
+    r = client.options('/sync/grocery', headers={
+        'Origin': 'http://localhost:8081',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization,content-type',
+    })
+    assert r.status_code == 200
+    assert r.headers['access-control-allow-origin'] == 'http://localhost:8081'
+
+
+def test_unlisted_web_origin_is_refused(client):
+    r = client.options('/sync/grocery', headers={
+        'Origin': 'https://untrusted.example',
+        'Access-Control-Request-Method': 'POST',
+    })
+    assert r.status_code == 400
+    assert 'access-control-allow-origin' not in r.headers
+
+
 def test_ask_then_passkey_starts_a_home_and_me_works(client):
     out = join(client)
     assert out["created"] is True

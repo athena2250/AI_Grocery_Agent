@@ -7,6 +7,7 @@ import {
   predictProduct,
 } from '../src/state/prediction';
 import { reducer } from '../src/state/reducer';
+import { withEvent } from '../src/state/eventClock';
 import { migrateState } from '../src/state/migrate';
 import { initialHouseholdState } from '../src/data/seed';
 import type { HouseholdState, InventoryEntry, Purchase } from '../src/types';
@@ -173,8 +174,9 @@ describe('suggestions (never auto-added)', () => {
     let state = seeded();
     const curd = homeSuggestions(state, NOW).predicted.find((p) => p.productId === 'p_curd')!;
     state = reducer(state, { type: 'ACCEPT_RESTOCK', proposal: curd });
-    state = reducer(state, { type: 'MARK_PURCHASED_BY_ID', itemId: state.listItems[0].id });
-    const p = predict(state.history, state.inventory, new Date()).find((x) => x.productId === 'p_curd')!;
+    state = withEvent(NOW.toISOString(), 'purchase_curd', () =>
+      reducer(state, { type: 'MARK_PURCHASED_BY_ID', itemId: state.listItems[0].id }));
+    const p = predict(state.history, state.inventory, NOW).find((x) => x.productId === 'p_curd')!;
     expect(p.status).toBe('NOT_NEEDED');
   });
 

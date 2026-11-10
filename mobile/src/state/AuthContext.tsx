@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import type { Account } from './auth';
 import { isOnline, setSessionToken } from '../services/api';
 import { checkSession } from '../services/HttpAuthService';
@@ -44,9 +45,24 @@ const isAccount = (a: any): a is Account =>
   !!a && typeof a.phone === 'string' && typeof a.name === 'string' && typeof a.relation === 'string';
 
 const tokenStore = {
-  get: () => SecureStore.getItemAsync(TOKEN_KEY).catch(() => null),
-  set: (t: string) => SecureStore.setItemAsync(TOKEN_KEY, t).catch(() => {}),
-  clear: () => SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {}),
+  // Browser storage is scoped to this tab; native builds use the OS keychain.
+  get: async () => {
+    try {
+      return Platform.OS === 'web' ? sessionStorage.getItem(TOKEN_KEY) : await SecureStore.getItemAsync(TOKEN_KEY);
+    } catch { return null; }
+  },
+  set: async (t: string) => {
+    try {
+      if (Platform.OS === 'web') sessionStorage.setItem(TOKEN_KEY, t);
+      else await SecureStore.setItemAsync(TOKEN_KEY, t);
+    } catch { /* Storage can be unavailable in private browsing. */ }
+  },
+  clear: async () => {
+    try {
+      if (Platform.OS === 'web') sessionStorage.removeItem(TOKEN_KEY);
+      else await SecureStore.deleteItemAsync(TOKEN_KEY);
+    } catch { /* Already cleared or unavailable. */ }
+  },
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
