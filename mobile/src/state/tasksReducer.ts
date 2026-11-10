@@ -22,6 +22,8 @@ export type TasksAction =
   | { type: 'HYDRATE'; payload: TasksState }
   | { type: 'ADD_TASK'; task: NewTask; by: string }
   | { type: 'TOGGLE_TASK'; id: string }
+  /** Server-issued admin repair, replayed on every phone. */
+  | { type: 'ADMIN_PATCH_TASK'; id: string; patch: Partial<Pick<Task, 'done' | 'doneAt' | 'whoId'>>; task?: Task }
   | { type: 'REMOVE_TASK'; id: string }
   | { type: 'FORGET_TASK_PREF'; key: string }
   /** Move finished tasks to history once their days on the board are up. */
@@ -38,6 +40,21 @@ export function tasksReducer(state: TasksState, action: TasksAction): TasksState
       const task: Task = { ...action.task, id: uid('task'), createdAt: now.toISOString(), createdBy: action.by, done: false, doneAt: null };
       // Saving is the confirmation — the only place task memory learns.
       return { ...state, tasks: [task, ...state.tasks], taskPrefs: learnTask(state.taskPrefs, action.task, now) };
+    }
+    case 'ADMIN_PATCH_TASK': {
+      const reopen = action.patch.done === false;
+      const archived = state.archive.find((t) => t.id === action.id);
+      const existing = state.tasks.some((t) => t.id === action.id);
+      const restore = reopen && !existing ? archived ?? action.task : undefined;
+      return {
+        ...state,
+        tasks: [
+          ...(restore ? [{ ...restore, ...action.patch }] : []),
+          ...state.tasks.map((t) => t.id === action.id ? { ...t, ...action.patch } : t),
+        ],
+        archive: state.archive.filter((t) => !(reopen && t.id === action.id))
+          .map((t) => t.id === action.id ? { ...t, ...action.patch } : t),
+      };
     }
     case 'TOGGLE_TASK': {
       if (!state.tasks.some((t) => t.id === action.id)) return state;

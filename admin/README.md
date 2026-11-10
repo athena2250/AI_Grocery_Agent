@@ -92,11 +92,12 @@ cd admin && ../backend/.venv/bin/python -m pytest -q
 
 ## Before production
 
-- **Data source.** The mobile sandbox still keeps everything on the phone (AsyncStorage). The
-  console shows what is in the database, so families only show up once the app talks to the
-  Phase 2 API.
-- **Suspension is enforced by the family API, not here.** The API's session middleware should
-  refuse a member whose household has `admin_household_status.status = 'suspended'`.
+- **Data source.** Shared grocery and task events are replayed through the same reducers as the
+  phones, and materialized into the tables used by reports. Startup backfills existing logs.
+  Sandbox-only activity stays on the device. Prices remain unknown unless explicitly supplied.
+  Admin task completion and assignment repairs are sent back through the shared log.
+- **Suspension.** The family API refuses sign-in and data access for suspended households.
+  Sign-out and account deletion remain available. Under-review homes retain access.
 - **Access.** Run it on an internal host or behind a VPN or SSO proxy, never on the public app
   domain, and serve it over HTTPS. The shared token suits one or two operators. Per-admin accounts
   are the next step (the audit log already records a name for each change).

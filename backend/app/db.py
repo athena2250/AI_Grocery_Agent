@@ -19,6 +19,8 @@ DEFAULT_DATABASE_URL = "postgresql+psycopg://localhost:5432/ai_grocery_agent"
 
 MODEL_MODULES = (
     "app.core.models",
+    "app.core.access",
+    "app.reporting.models",
     "app.feed.models",
     "app.conversation.models",
     "app.tasks.models",

@@ -9,32 +9,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
 from typing import Any
 
 from sqlmodel import Field, SQLModel
 
 import app.core.models  # noqa: F401  (registers household for the FK below)
-from app.core.sqltypes import JSONType, TZDateTime, enum_type, utcnow
-
-
-class HouseholdStatus(str, Enum):
-    ACTIVE = "active"
-    UNDER_REVIEW = "under_review"
-    """Something is being looked at; the family keeps using the app."""
-    SUSPENDED = "suspended"
-
-
-class AdminHouseholdStatus(SQLModel, table=True):
-    __tablename__ = "admin_household_status"  # type: ignore[assignment]
-
-    household_id: str = Field(foreign_key="household.id", primary_key=True)
-    status: HouseholdStatus = Field(
-        default=HouseholdStatus.ACTIVE, sa_type=enum_type(HouseholdStatus)
-    )
-    note: str | None = None
-    updated_by: str
-    updated_at: datetime = Field(default_factory=utcnow, sa_type=TZDateTime)
+from app.core.access import AdminHouseholdStatus, HouseholdStatus  # noqa: F401
+from app.core.sqltypes import JSONType, TZDateTime, utcnow
 
 
 class AdminAction(SQLModel, table=True):

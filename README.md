@@ -25,7 +25,7 @@ project's Expo SDK 57, or a development build. Keep the phone and computer on th
 
 ## Run the API, admin and browser together
 
-Python 3.11+ is required. Set up once:
+Python 3.11+ and Node.js are required (Node replays the shared app reducers for admin reporting). Set up once:
 
 ```bash
 python3 -m venv backend/.venv
@@ -99,7 +99,8 @@ cd ../admin
 ```
 
 `pytest -m llm` in `backend/` additionally requires a running Ollama instance.
-The static web build is written to `mobile/dist/`.
+The static web build is written to `mobile/dist/`. After editing grocery/task reducer logic, run
+`node scripts/build-reporting.cjs` from the root; CI verifies the committed reporting bundle matches.
 
 ## Repository layout
 

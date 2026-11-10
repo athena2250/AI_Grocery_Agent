@@ -105,7 +105,7 @@ def test_joining_the_same_home_shares_events(client):
     assert ravi["account"]["householdId"] == priya["account"]["householdId"]
     assert ravi["account"]["role"] == "member"
 
-    ev = {"id": "ev_priya_0001", "at": "2026-10-06T09:00:00.120Z", "body": {"type": "ADD_ITEM"}}
+    ev = {"id": "ev_priya_0001", "at": "2026-10-06T09:00:00.120Z", "body": {"type": "APPROVE_LIST"}}
     r = client.post("/sync/grocery", json={"events": [ev, ev]}, headers=bearer(priya["token"]))
     seqs = {a["seq"] for a in r.json()["accepted"]}
     assert len(seqs) == 1  # resending is a no-op
@@ -221,3 +221,134 @@ def test_understand_says_unavailable_when_the_llm_fails(client, monkeypatch):
         assert client.post("/understand", json={"text": "get rice"}, headers=bearer(priya["token"])).status_code == 503
     finally:
         api.app.state.llm = None
+
+
+def test_suspended_home_denies_existing_session_and_sign_in_but_allows_deletion(client):
+    from app.core.access import AdminHouseholdStatus, HouseholdStatus
+    out = join(client)
+    # Existing sessions must lose access immediately; no app restart required.
+    with Session(client.engine) as s:
+        s.add(AdminHouseholdStatus(household_id=out['account']['householdId'],
+            status=HouseholdStatus.SUSPENDED, updated_by='Admin', note='Review'))
+        s.commit()
+    headers = bearer(out['token'])
+    assert client.get('/me', headers=headers).status_code == 403
+    assert client.get('/sync/grocery', headers=headers).status_code == 403
+    assert client.post('/sync/tasks', headers=headers, json={'events': []}).status_code == 403
+    assert client.delete('/me', headers=headers).status_code == 200
+
+
+def test_sync_materializes_reports_and_retries_are_idempotent(client):
+    from app.history.models import Purchase
+    from app.tasks.models import Task
+    from app.reporting.models import ReportState
+    from sqlmodel import select
+    out = join(client)
+    headers = bearer(out['token'])
+    hid = out['account']['householdId']
+    mid = out['account']['memberId']
+    at = '2026-11-10T09:00:00.000Z'
+    def push(stream, events):
+        r = client.post('/sync/' + stream, headers=headers, json={'events': events})
+        assert r.status_code == 200, r.text
+    item = {'product': {'id': 'p_tomato', 'name': 'Tomatoes', 'category': 'Vegetables', 'defaultUnit': 'kg'},
+            'qty': 2, 'unit': 'kg', 'brand': None, 'variant': None}
+    events = [
+        {'id': 'ev_add_0001', 'at': at, 'body': {'type': 'ADD_ITEM', 'item': item, 'by': mid}},
+        {'id': 'ev_buy_0001', 'at': at, 'body': {'type': 'MARK_PURCHASED_BY_ID', 'itemId': 'it_ev_add_0001_0', 'by': mid}},
+    ]
+    push('grocery', events)
+    push('grocery', events)
+    task = {'title': 'Fix tap', 'section': 'Home Repair', 'kind': 'task', 'notes': '',
+            'whoId': mid, 'due': '2026-11-12', 'details': {}}
+    push('tasks', [{'id': 'ev_task_001', 'at': at, 'body': {'type': 'ADD_TASK', 'task': task, 'by': mid}}])
+    with Session(client.engine) as s:
+        purchases = s.exec(select(Purchase).where(Purchase.household_id == hid)).all()
+        bought = [p for p in purchases if p.id.endswith('h_ev_buy_0001_0')]
+        assert len(bought) == 1 and bought[0].qty == 2 and bought[0].member_id == mid
+        tasks = s.exec(select(Task).where(Task.household_id == hid)).all()
+        assert len(tasks) == 1 and tasks[0].title == 'Fix tap'
+        # Date-only deadlines last the whole day in the household timezone.
+        assert tasks[0].due_at.hour == 18 and tasks[0].due_at.minute == 29
+        assert s.get(ReportState, (hid, 'grocery')).last_seq == 2
+    assert client.delete('/me', headers=headers).status_code == 200
+    with Session(client.engine) as s:
+        assert not s.exec(select(Purchase).where(Purchase.household_id == hid)).all()
+        assert not s.exec(select(Task).where(Task.household_id == hid)).all()
+
+
+def test_sync_rejects_admin_actions_and_bad_reducer_input_atomically(client):
+    out = join(client)
+    headers = bearer(out['token'])
+    event = {'id': 'ev_bad_0001', 'at': '2026-11-10T09:00:00Z', 'body': {'type': 'ADMIN_PATCH_TASK'}}
+    assert client.post('/sync/tasks', headers=headers, json={'events': [event]}).status_code == 403
+    event['body'] = {'type': 'ADD_ITEM'}
+    assert client.post('/sync/grocery', headers=headers, json={'events': [event]}).status_code == 422
+    assert client.get('/sync/grocery', headers=headers).json()['events'] == []
+
+
+def test_privacy_has_real_contact_and_escapes_configuration(client, monkeypatch):
+    assert 'rithvika.tiruveedhula51@gmail.com' in client.get('/privacy').text
+    assert '[CONTACT EMAIL]' not in client.get('/privacy').text
+    monkeypatch.setenv('PRIVACY_CONTACT_EMAIL', '<script>bad</script>')
+    assert '&lt;script&gt;' in client.get('/privacy').text
+
+
+def test_production_config_refuses_missing_or_weak_settings(monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setenv('AUTH_SECRET', '')
+    with pytest.raises(RuntimeError, match='AUTH_SECRET'):
+        api.validate_production_config()
+    monkeypatch.setenv('AUTH_SECRET', 'x' * 48)
+    monkeypatch.delenv('DATABASE_URL', raising=False)
+    with pytest.raises(RuntimeError, match='DATABASE_URL'):
+        api.validate_production_config()
+    monkeypatch.setenv('DATABASE_URL', 'postgresql://example/hearth')
+    monkeypatch.setenv('CORS_ORIGINS', 'http://localhost:8081')
+    with pytest.raises(RuntimeError, match='HTTPS'):
+        api.validate_production_config()
+    monkeypatch.setenv('CORS_ORIGINS', 'https://hearth.example.com')
+    api.validate_production_config()
+
+
+def test_suspension_blocks_passkey_and_resuming_restores_access(client):
+    from app.core.access import AdminHouseholdStatus, HouseholdStatus
+    client.post('/auth/request', json={'phone': PRIYA, 'name': 'Priya'})
+    key = admin_approves(client, PRIYA)
+    body = {'phone': PRIYA, 'name': 'Priya', 'passkey': key}
+    out = client.post('/auth/passkey', json=body).json()
+    hid = out['account']['householdId']
+    with Session(client.engine) as s:
+        s.add(AdminHouseholdStatus(household_id=hid, status=HouseholdStatus.SUSPENDED,
+                                  updated_by='Admin', note='Review'))
+        s.commit()
+    assert client.post('/auth/passkey', json=body).status_code == 403
+    # A refused attempt must not replace the existing session.
+    with Session(client.engine) as s:
+        row = s.get(AdminHouseholdStatus, hid)
+        row.status = HouseholdStatus.UNDER_REVIEW
+        s.add(row)
+        s.commit()
+    assert client.get('/me', headers=bearer(out['token'])).status_code == 200
+
+
+def test_reporting_rebuilds_existing_event_log(client):
+    from app.reporting.project import backfill
+    from app.reporting.models import ReportState
+    from app.sync.models import SyncEvent
+    from app.tasks.models import Task
+    from sqlmodel import select
+    out = join(client)
+    hid, mid = out['account']['householdId'], out['account']['memberId']
+    with Session(client.engine) as s:
+        s.add(SyncEvent(household_id=hid, member_id=mid, stream='tasks', client_id='ev_old_0001',
+            at=utcnow(), body={'type': 'ADD_TASK', 'by': mid, 'task': {
+                'title': 'Existing task', 'section': 'Errands', 'kind': 'errand',
+                'notes': '', 'whoId': mid, 'due': None, 'details': {}}}))
+        s.commit()
+        backfill(s)
+        s.commit()
+        backfill(s)
+        s.commit()
+        assert len(s.exec(select(Task).where(Task.household_id == hid)).all()) == 1
+        assert s.get(ReportState, (hid, 'tasks')).last_seq == 1

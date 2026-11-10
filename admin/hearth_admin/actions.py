@@ -129,6 +129,18 @@ def sign_out_member(s: Session, admin: str, mid: str, note: str | None,
     return {"revoked": n}
 
 
+def _sync_task_patch(s: Session, t: Task, now: datetime, patch: dict[str, Any]) -> None:
+    local_id = t.details_json.get("sync_id")
+    if local_id:
+        from app.sync.store import NewEvent, append
+        s.flush()
+        append(s, household_id=t.household_id, member_id=t.created_by_member_id, stream="tasks",
+               events=[NewEvent(f"admin_{uuid.uuid4().hex}", now,
+                   ({"type": "REMOVE_TASK", "id": local_id} if patch.get("cancelled") else
+                    {"type": "ADMIN_PATCH_TASK", "id": local_id, "patch": patch,
+                     "task": t.details_json.get("sync_task")}))])
+
+
 # ------------------------------------------------------------------------------ tasks
 
 def set_task_status(s: Session, admin: str, tid: str, status: str, note: str | None,
@@ -147,6 +159,8 @@ def set_task_status(s: Session, admin: str, tid: str, status: str, note: str | N
                     created_at=now))
     _log(s, admin, "task_status", "task", tid, t.household_id, now, note,
          before=before.value, after=new.value)
+    _sync_task_patch(s, t, now, {"cancelled": True} if new == TaskStatus.CANCELLED else
+                     {"done": new == TaskStatus.DONE, "doneAt": iso(t.done_at)})
     return {"status": new.value, "done_at": iso(t.done_at)}
 
 
@@ -167,6 +181,8 @@ def assign_task(s: Session, admin: str, tid: str, member_id: str, note: str | No
                     created_at=now))
     _log(s, admin, "task_assign", "task", tid, t.household_id, now, note,
          before=before, after=member_id)
+    from app.reporting.project import profile_member_id
+    _sync_task_patch(s, t, now, {"whoId": profile_member_id(s, t.household_id, member_id)})
     return {"assigned_to_member_id": member_id}
 
 

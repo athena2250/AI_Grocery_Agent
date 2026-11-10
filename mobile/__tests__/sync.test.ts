@@ -109,6 +109,38 @@ describe('tasks log', () => {
     expect(viewOf(tasksReducer, b).tasks[0]).toMatchObject({ done: true, doneAt: '2026-10-01T10:00:00.000Z', createdBy: 'm_mom' });
   });
 
+  it('admin repairs converge on both phones alongside offline changes', () => {
+    const srv = server<TasksAction>();
+    let a = send(phone<typeof initialTasksState, TasksAction>('h1', initialTasksState), { type: 'ADD_TASK', task, by: 'm_mom' });
+    srv.push(a.pending);
+    a = foldRemote(tasksReducer, a, srv.since(0));
+    let b = foldRemote(tasksReducer, phone<typeof initialTasksState, TasksAction>('h1', initialTasksState), srv.since(0));
+    const id = viewOf(tasksReducer, a).tasks[0].id;
+    // Another phone queues an offline task while admin finishes/reassigns the existing one.
+    b = send(b, { type: 'ADD_TASK', task: { ...task, title: 'Offline task' }, by: 'm_dad' });
+    srv.push([env<TasksAction>({ type: 'ADMIN_PATCH_TASK', id, patch: { done: true, doneAt: '2026-11-10T10:00:00.000Z', whoId: 'm_me' } })]);
+    srv.push(b.pending);
+    a = foldRemote(tasksReducer, a, srv.since(a.lastSeq));
+    b = foldRemote(tasksReducer, b, srv.since(b.lastSeq));
+    expect(viewOf(tasksReducer, a)).toEqual(viewOf(tasksReducer, b));
+    expect(viewOf(tasksReducer, a).tasks.find((t) => t.id === id)).toMatchObject({ done: true, whoId: 'm_me' });
+    expect(viewOf(tasksReducer, a).tasks.filter((t) => t.title === 'Offline task')).toHaveLength(1);
+    expect(b.pending).toEqual([]);
+  });
+
+  it('admin can reopen an archived or cancelled task', () => {
+    const created = tasksReducer(initialTasksState, { type: 'ADD_TASK', task, by: 'm_mom' });
+    const original = created.tasks[0];
+    const archived = { ...original, done: true, doneAt: '2026-10-01T10:00:00.000Z', archivedAt: '2026-10-05T10:00:00.000Z', reason: 'done' as const };
+    const reopen: TasksAction = { type: 'ADMIN_PATCH_TASK', id: original.id, patch: { done: false, doneAt: null }, task: original };
+    const fromArchive = tasksReducer({ ...initialTasksState, archive: [archived] }, reopen);
+    expect(fromArchive.archive).toEqual([]);
+    expect(fromArchive.tasks[0]).toMatchObject({ id: original.id, done: false, doneAt: null });
+    const fromCancelled = tasksReducer(initialTasksState, reopen);
+    expect(fromCancelled.tasks).toHaveLength(1);
+    expect(tasksReducer(fromCancelled, reopen).tasks).toHaveLength(1);
+  });
+
   it('sweeps finished tasks to history only when due', () => {
     const s1 = tasksReducer(initialTasksState, { type: 'ADD_TASK', task, by: 'm_mom' });
     const s2 = tasksReducer(s1, { type: 'TOGGLE_TASK', id: s1.tasks[0].id });

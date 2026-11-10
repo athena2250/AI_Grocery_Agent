@@ -1,6 +1,6 @@
 # Going live
 
-How to put the Hearth server online and ship the app to Android and iPhone. Do the steps in order. Everything marked **you** needs your own account or a decision; the code is ready.
+How to put the Hearth server online and ship the app to Android and iPhone. Do the steps in order. Account setup, live checks, and signed-device testing are still required before release.
 
 ## What the app does in each mode
 
@@ -49,7 +49,7 @@ Model: `llama3:8b` passes 24 of 26 phrases in the eval set (`OLLAMA_MODEL=llama3
 
 ## 3. Privacy policy (you, 2 minutes)
 
-The server publishes it at `https://<your-service>/privacy` (`backend/app/static/privacy.html`). Replace **[CONTACT EMAIL]** with the address people should write to, then redeploy. Both stores ask for this URL.
+The server publishes it at `https://<your-service>/privacy` (`backend/app/static/privacy.html`). The contact is **rithvika.tiruveedhula51@gmail.com**. Override it with `PRIVACY_CONTACT_EMAIL` if needed. Both stores ask for this URL.
 
 ## 4. Build the apps
 
@@ -80,3 +80,39 @@ cd backend && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --reload
 cd mobile && EXPO_PUBLIC_API_URL=http://<your-mac's-LAN-IP>:8000 npx expo start
 scripts/admin.sh local        # issue passkeys to your test phones
 ```
+
+## Release verification
+
+The API now requires Node.js as well as Python: reporting replays a bundled copy of the exact
+mobile grocery/task reducers. The Dockerfile installs Node automatically. When changing those
+reducers, run `node scripts/build-reporting.cjs` from the repository root and commit the generated
+`backend/app/reporting/replay.cjs`. CI rejects stale bundles, runs all automated checks and builds
+the Docker image. Event writes and their report updates commit together; PostgreSQL serializes
+writers per household. Startup backfills existing logs. No destructive schema migration is needed
+for the new `report_state` table. The access-policy table keeps its existing schema.
+
+Production startup requires `AUTH_SECRET` of at least 32 characters and an explicit PostgreSQL
+`DATABASE_URL`. Set `CORS_ORIGINS` to your browser site's HTTPS origin; leave it empty for native
+apps only. The Render blueprint deploys the API/database, not the web frontend or admin console.
+Host `mobile/dist` separately for browser users and keep admin on loopback/VPN/SSO as described
+in the admin README. Verify that both EAS live profiles point at your actual API URL.
+
+After deployment, run this read-only check from the repository root:
+
+```bash
+python3 scripts/check-deployment.py https://YOUR-API-HOST --web-origin https://YOUR-WEB-HOST
+```
+
+Before inviting real households, complete a two-device acceptance run on signed builds:
+
+1. Issue two passkeys into the same household. Sign in on both devices.
+2. Add groceries and tasks on each device; check the other device within 15 seconds.
+3. Mark a purchase and complete a task. Confirm the admin reports agree. Reassign/reopen the
+   task from admin and confirm the other device receives the repair.
+4. Disconnect one device, make changes, reconnect, and verify each change appears exactly once.
+5. Suspend the home: existing sessions and fresh sign-in must be blocked. Resume it and retry.
+6. Sign out/reload/relaunch, then delete a test account; verify access ends and the remaining
+   family member keeps access. Deleting the last member removes the shared log and report rows.
+
+Configure database backups, test a restore, and set up uptime/error monitoring with your host.
+These operational checks and signed Android/iOS testing cannot be established by unit tests.

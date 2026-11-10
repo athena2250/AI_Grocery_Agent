@@ -12,25 +12,28 @@ don't recognise, and turn what it extracted back into commands for those rules.
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
+import subprocess
 import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field, ValidationError
 from sqlmodel import Session, col, select
 
 from app import db
 from app.auth import store as auth
+from app.core.access import AdminHouseholdStatus, HouseholdStatus
 from app.core.models import Member
 from app.core.sqltypes import utcnow
 from app.seed import main as seed_main
@@ -66,12 +69,27 @@ async def _purge_daily() -> None:
         await asyncio.sleep(PURGE_EVERY_S)
 
 
+def validate_production_config() -> None:
+    if os.environ.get("APP_ENV", "").lower() != "production":
+        return
+    secret = os.environ.get("AUTH_SECRET", "").strip()
+    if len(secret) < 32 or secret == "dev-only-change-me":
+        raise RuntimeError("AUTH_SECRET must contain at least 32 characters in production")
+    if not os.environ.get("DATABASE_URL", "").startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+        raise RuntimeError("Set DATABASE_URL to a production PostgreSQL database")
+    origins = [v.strip() for v in os.environ.get("CORS_ORIGINS", "").split(",") if v.strip()]
+    if any(not v.startswith("https://") or v == "*" for v in origins):
+        raise RuntimeError("Production CORS_ORIGINS must contain explicit HTTPS origins")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    if os.environ.get("APP_ENV", "").lower() == "production" and \
-            os.environ.get("AUTH_SECRET", "dev-only-change-me") == "dev-only-change-me":
-        raise RuntimeError("set AUTH_SECRET in production")
+    validate_production_config()
     seed_main(_engine(), demo=False)  # tables + catalog; never the demo household
+    from app.reporting.project import backfill
+    with Session(_engine()) as session:
+        backfill(session)
+        session.commit()
     task = asyncio.create_task(_purge_daily())
     yield
     task.cancel()
@@ -81,7 +99,8 @@ app = FastAPI(title="Hearth API", lifespan=lifespan, docs_url=None, redoc_url=No
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in os.environ.get(
-        "CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081"
+        "CORS_ORIGINS", "" if os.environ.get("APP_ENV", "").lower() == "production"
+        else "http://localhost:8081,http://127.0.0.1:8081"
     ).split(",") if origin.strip()],
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
@@ -133,7 +152,7 @@ class Caller:
     token: str
 
 
-def caller(s: SessionDep, authorization: Annotated[str | None, Header()] = None) -> Caller:
+def caller(request: Request, s: SessionDep, authorization: Annotated[str | None, Header()] = None) -> Caller:
     token = (authorization or "").removeprefix("Bearer ").strip()
     if not token:
         raise HTTPException(401, {"error": "signed_out", "message": "Please sign in."})
@@ -149,7 +168,16 @@ def caller(s: SessionDep, authorization: Annotated[str | None, Header()] = None)
             else "You're no longer part of this home." if check.reason.value == "removed"
             else "You were signed out.",
         })
+    if request.url.path != "/auth/sign-out" and not (request.url.path == "/me" and request.method == "DELETE"):
+        _require_active_home(s, check.member.household_id)
     return Caller(member=check.member, token=token)
+
+
+def _require_active_home(s: Session, hid: str) -> None:
+    status = s.get(AdminHouseholdStatus, hid)
+    if status and status.status == HouseholdStatus.SUSPENDED:
+        raise HTTPException(403, {"error": "household_suspended",
+                                 "message": "This home is suspended. Please contact the admin."})
 
 
 CallerDep = Annotated[Caller, Depends(caller)]
@@ -225,6 +253,7 @@ def passkey_sign_in(body: PasskeyIn, s: SessionDep, request: Request) -> dict[st
     except auth.AuthRefused:
         s.commit()  # wrong tries are logged and count toward the lockout
         raise
+    _require_active_home(s, r.member.household_id)
     s.commit()
     return {"token": r.token, "created": r.created, "account": _account(r.member)}
 
@@ -287,9 +316,18 @@ async def push(stream: str, c: CallerDep, s: SessionDep, request: Request) -> di
     raw = await request.body()
     if len(raw) > MAX_PUSH_BYTES:
         raise HTTPException(413, {"error": "too_large"})
-    body = Push.model_validate_json(raw)
-    seqs = sync.append(s, household_id=c.member.household_id, member_id=c.member.id, stream=stream,
-                       events=[sync.NewEvent(e.id, e.at, e.body) for e in body.events])
+    try:
+        body = Push.model_validate_json(raw)
+    except ValidationError:
+        raise HTTPException(422, {"error": "invalid_events", "message": "Invalid sync events."})
+    if any(isinstance(e.body.get("type"), str) and e.body["type"].startswith("ADMIN_") for e in body.events):
+        raise HTTPException(403, {"error": "admin_only", "message": "This action requires an admin."})
+    try:
+        seqs = sync.append(s, household_id=c.member.household_id, member_id=c.member.id, stream=stream,
+                           events=[sync.NewEvent(e.id, e.at, e.body) for e in body.events])
+    except subprocess.CalledProcessError:
+        s.rollback()
+        raise HTTPException(422, {"error": "invalid_events", "message": "These changes could not be applied."})
     s.commit()
     return {"accepted": [{"id": cid, "seq": seq} for cid, seq in seqs]}
 
@@ -352,7 +390,9 @@ _PRIVACY = Path(__file__).with_name("static") / "privacy.html"
 
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy() -> str:
-    return _PRIVACY.read_text()
+    return _PRIVACY.read_text().replace("[CONTACT EMAIL]", html.escape(os.environ.get(
+        "PRIVACY_CONTACT_EMAIL"
+    ) or "rithvika.tiruveedhula51@gmail.com"))
 
 
 @app.get("/healthz")
