@@ -32,6 +32,12 @@ python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -e './backend[dev]' -e './admin[dev]'
 ```
 
+Start local PostgreSQL and create the database once if it does not already exist:
+
+```bash
+createdb -h localhost ai_grocery_agent
+```
+
 Then from the root (stop any existing Expo server on port 8081 first):
 
 ```bash
@@ -44,9 +50,22 @@ bash scripts/dev.sh full
 | API health | http://127.0.0.1:8000/healthz |
 | Admin console | http://127.0.0.1:8100 |
 
-The launcher uses a dedicated SQLite database at `backend/local.db`, creates the schema/catalog,
-and connects the app to the API. The local admin token is `local-development-only`, or the value
+The launcher uses PostgreSQL at `localhost:5432/ai_grocery_agent`, creates any missing schema/catalog,
+and connects both the API and admin console to that database. It uses your local PostgreSQL role
+(by default your OS username). To use a different local connection, set `HEARTH_LOCAL_DATABASE_URL`.
+The local admin token is `local-development-only`, or the value
 of `ADMIN_TOKEN` if you set it. These settings are for local development. Ctrl-C stops all services.
+
+In DBeaver, create a **PostgreSQL** connection with host `localhost`, port `5432`, database
+`ai_grocery_agent` and your local PostgreSQL username. On this Mac the role is `rithvikat`, and
+the local connection works without a password. Click **Test Connection**, then **Finish**.
+The app tables are under **Schemas → public → Tables**.
+
+The earlier SQLite file at `backend/local.db` is preserved. To explicitly run against it:
+
+```bash
+HEARTH_LOCAL_DATABASE_URL="sqlite:///$PWD/backend/local.db" bash scripts/dev.sh full
+```
 
 For shared sign-in: request access in the family app, open the admin console and enter the admin
 token, then approve the request under **Passkey Issue**. Use the generated passkey in the family

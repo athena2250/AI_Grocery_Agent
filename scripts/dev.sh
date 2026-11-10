@@ -21,8 +21,9 @@ if [[ ! -x "$PY" ]]; then
   echo 'Set up the backend first (see README.md).' >&2
   exit 1
 fi
-# A dedicated local database; never inherit a production database URL.
-export DATABASE_URL="sqlite:///$ROOT/backend/local.db"
+# Use local PostgreSQL by default. A separate override avoids accidentally
+# inheriting a production DATABASE_URL from the shell.
+export DATABASE_URL="${HEARTH_LOCAL_DATABASE_URL:-postgresql+psycopg://localhost:5432/ai_grocery_agent}"
 export APP_ENV=development
 export ADMIN_TOKEN="${ADMIN_TOKEN:-local-development-only}"
 export CORS_ORIGINS=http://localhost:8081,http://127.0.0.1:8081
