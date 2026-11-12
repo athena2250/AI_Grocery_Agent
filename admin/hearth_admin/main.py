@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -20,12 +22,23 @@ from sqlmodel import Session
 from app.core.sqltypes import utcnow
 
 from . import actions, analytics, diagnostics, passkeys, queries
-from .auth import require_admin
+from .auth import operator_tokens, require_admin
 from .db import get_session
 
 STATIC = Path(__file__).with_name("static")
 
-app = FastAPI(title="Hearth Admin", docs_url=None, redoc_url=None)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if os.environ.get("APP_ENV", "").lower() == "production":
+        from app.main import validate_production_config
+        validate_production_config()
+        if not operator_tokens():
+            raise RuntimeError("Production admin requires ADMIN_TOKENS")
+    yield
+
+
+app = FastAPI(title="Hearth Admin", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -34,7 +47,12 @@ async def _always_fresh(request: Request, call_next):  # type: ignore[no-untyped
     restarted console never runs yesterday's page."""
 
     response = await call_next(request)
-    if not request.url.path.startswith("/api"):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-store"
+    else:
         response.headers["Cache-Control"] = "no-cache"
     return response
 api = APIRouter(prefix="/api", dependencies=[Depends(require_admin)])
@@ -133,8 +151,9 @@ def families(s: Session = Depends(get_session)) -> list[dict[str, Any]]:
 
 
 @api.get("/families/{hid}")
-def family(hid: str, s: Session = Depends(get_session)) -> dict[str, Any]:
-    out = queries.family_detail(s, hid, utcnow())
+def family(hid: str, offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=300),
+           s: Session = Depends(get_session)) -> dict[str, Any]:
+    out = queries.family_detail(s, hid, utcnow(), offset=offset, limit=limit)
     if out is None:
         raise HTTPException(404, f"household {hid}")
     return out
@@ -142,10 +161,12 @@ def family(hid: str, s: Session = Depends(get_session)) -> dict[str, Any]:
 
 @api.get("/tasks")
 def tasks(status: str | None = None, household_id: str | None = None, q: str | None = None,
-          overdue: bool = False, s: Session = Depends(get_session)) -> list[dict[str, Any]]:
+          overdue: bool = False, offset: int = Query(0, ge=0),
+          limit: int = Query(50, ge=1, le=300), category: str | None = None,
+          s: Session = Depends(get_session)) -> list[dict[str, Any]]:
     try:
         return queries.tasks(s, utcnow(), status=status, household_id=household_id, q=q,
-                             overdue=overdue)
+                             overdue=overdue, offset=offset, limit=limit, category=category)
     except ValueError:
         raise HTTPException(422, f"unknown status {status}") from None
 
@@ -156,10 +177,10 @@ def task_events(tid: str, s: Session = Depends(get_session)) -> list[dict[str, A
 
 
 @api.get("/posts")
-def posts(status: str | None = None, kind: str | None = None, household_id: str | None = None,
-          s: Session = Depends(get_session)) -> list[dict[str, Any]]:
+def posts(offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=300), status: str | None = None,
+          kind: str | None = None, household_id: str | None = None, s: Session = Depends(get_session)) -> list[dict[str, Any]]:
     try:
-        return queries.posts(s, status=status, kind=kind, household_id=household_id)
+        return queries.posts(s, status=status, kind=kind, household_id=household_id, offset=offset, limit=limit)
     except ValueError:
         raise HTTPException(422, f"unknown status {status}") from None
 
@@ -187,8 +208,9 @@ def passkeys_waiting(s: Session = Depends(get_session)) -> list[dict[str, Any]]:
 
 
 @api.get("/audit")
-def audit(household_id: str | None = None, s: Session = Depends(get_session)) -> list[dict[str, Any]]:
-    return queries.audit(s, household_id)
+def audit(offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=300), household_id: str | None = None,
+          s: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return queries.audit(s, household_id, offset=offset, limit=limit)
 
 
 # ------------------------------------------------------------------------------ writes

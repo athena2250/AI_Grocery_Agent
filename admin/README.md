@@ -99,8 +99,36 @@ cd admin && ../backend/.venv/bin/python -m pytest -q
 - **Suspension.** The family API refuses sign-in and data access for suspended households.
   Sign-out and account deletion remain available. Under-review homes retain access.
 - **Access.** Run it on an internal host or behind a VPN or SSO proxy, never on the public app
-  domain, and serve it over HTTPS. The shared token suits one or two operators. Per-admin accounts
-  are the next step (the audit log already records a name for each change).
+  domain, and serve it over HTTPS. Local development can use a shared token. Production requires `ADMIN_TOKENS`, a JSON map of operator names to separate random tokens
+  (32 characters minimum). Audit identity comes from the token; a supplied name cannot override it.
+  Remove an operator entry and restart to revoke their access. The legacy `ADMIN_TOKEN` works
+  only outside production.
 - **Scale.** Monthly totals and the scanner run in Python over the rows they need, so the same
   code works on Postgres and SQLite. Move the month grouping to `date_trunc` once there are
   thousands of homes.
+
+## Production packaging and credentials
+
+Build from the repository root with `docker build -f admin/Dockerfile -t hearth-admin .`.
+Use `admin/.env.example` as configuration reference (the service does not load it automatically).
+Supply the API's exact `DATABASE_URL` and `AUTH_SECRET`; a different auth secret produces unusable
+member passkeys. Run with `APP_ENV=production` and `ADMIN_TOKENS`. For a Docker host, publish only
+to loopback, for example `-p 127.0.0.1:8100:8100`, and put HTTPS/VPN/SSO in front. Do not publish
+this container as an unprotected public service. The API Render blueprint deliberately does not
+expose the admin console.
+
+Each operator signs in with their own token. The name field is for local development only.
+Malformed/duplicate named credentials fail closed. API responses use `Cache-Control: no-store`.
+
+## Data coverage
+
+The family Pantry tab reads the synced grocery reducer's inventory, including approximate quantity
+and last update. Bills from the app are synced tasks in **Bills & Payments**, with the same status,
+assignment and history controls as Tasks. Feed posts shows current shared task activity alongside
+clearly labelled legacy server posts. Current phones do not send delivery/read receipts; legacy
+receipt status must not be interpreted as delivery of current app tasks. Legacy bill accounts are
+shown separately from app bills. Sandbox-only data cannot appear in admin.
+
+Tasks, posts, audit, family lists and sign-ins have Previous/Next navigation. Ordering includes a
+unique identifier for stable ties; concurrent writes may shift offset pages, so refresh before
+acting. The overdue predicate is applied before pagination.

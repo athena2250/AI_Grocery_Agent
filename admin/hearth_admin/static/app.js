@@ -13,6 +13,23 @@ const root = document.getElementById("root");
 function sessionGet(k) { try { return sessionStorage.getItem(k); } catch { return null; } }
 function sessionSet(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} }
 
+// Pages retain filters in the hash; changing a filter starts at the first page.
+const PAGE_SIZE = 50;
+function pageOffset(p) { return Math.max(0, Number.parseInt(p.get("offset"), 10) || 0); }
+function pager(p, count) {
+  const offset = pageOffset(p);
+  const path = location.hash.split("?")[0];
+  const link = (n) => { const q = new URLSearchParams(p); q.set("offset", n); return esc(path + "?" + q); };
+  return `<div class="actions" aria-label="Pagination">
+    ${offset ? `<a class="btn" href="${link(Math.max(0, offset - PAGE_SIZE))}">Previous</a>` : ""}
+    <span class="muted">${count ? `${offset + 1}–${offset + count}` : "No more records"}</span>
+    ${count === PAGE_SIZE ? `<a class="btn" href="${link(offset + PAGE_SIZE)}">Next</a>` : ""}</div>`;
+}
+function pantryTable(rows) {
+  return `<div class="tablewrap"><table><thead><tr><th>Product</th><th>Stock</th><th>Approximate quantity</th><th>Updated</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td>${esc(r.product)}</td><td>${esc(pretty(r.state))}</td><td>${r.qty == null ? "—" : fmtNum(r.qty) + " " + esc(r.unit || "")}</td><td>${when(r.updated_at)}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No synced pantry entries yet.</td></tr>`}
+    </tbody></table></div>`;
+}
 // ------------------------------------------------------------------ helpers
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
@@ -334,19 +351,20 @@ async function pageFamilies() {
 }
 
 async function pageFamily(id, p) {
-  const f = await api("/families/" + encodeURIComponent(id));
+  const f = await api("/families/" + encodeURIComponent(id) + qs({ offset: pageOffset(p), limit: PAGE_SIZE }));
   const tab = p.get("tab") || "members";
-  const audit = tab === "audit" ? await api("/audit" + qs({ household_id: id })) : null;
+  const audit = tab === "audit" ? await api("/audit" + qs({ household_id: id, offset: pageOffset(p), limit: PAGE_SIZE })) : null;
   const tabs = [["members", `Members (${f.members.length})`], ["tasks", `Tasks (${f.tasks.length})`], ["posts", `Posts (${f.posts.length})`],
-    ["lists", "Grocery lists"], ["bills", "Bills"], ["signins", "Sign-ins"], ["issues", `Issues (${f.issues.length})`], ["audit", "Admin log"]];
+    ["lists", "Grocery lists"], ["pantry", "Pantry"], ["bills", "Bills"], ["signins", "Sign-ins"], ["issues", `Issues (${f.issues.length})`], ["audit", "Admin log"]];
   const body = {
+    pantry: () => pantryTable(f.pantry),
     members: () => `<div class="members">${f.members.map(memberCard).join("")}</div>`,
     tasks: () => taskTable(f.tasks, f.members),
-    posts: () => postTable(f.posts),
+    posts: () => `<p class="muted">Legacy server posts and delivery receipts. Current app activity is available under Tasks.</p>${postTable(f.posts)}`,
     lists: () => f.lists.map((l) => `<div style="margin-bottom:14px"><div class="group-head"><b>List ${esc(l.id)}</b><span>${statusPill(l.status)} <span class="faint">${when(l.created_at)}</span></span></div>
       <table><thead><tr><th>Item</th><th>Category</th><th class="num">Qty</th><th>Status</th><th class="num">Expected</th></tr></thead><tbody>
       ${l.items.map((i) => `<tr><td>${esc(i.product)}${i.brand ? ` <span class="faint">${esc(i.brand)}</span>` : ""}${i.needs_clarification ? ` <span class="pill warn">needs answer</span>` : ""}</td><td>${esc(i.category)}</td><td class="num">${fmtNum(i.qty)} ${esc(i.unit || "")}</td><td>${statusPill(i.status)}</td><td class="num">${money(i.expected_total)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">Empty list.</td></tr>`}</tbody></table></div>`).join("") || `<div class="empty">No grocery lists on the server yet.</div>`,
-    bills: () => `<table><thead><tr><th>Bill</th><th>Pays</th><th>Recent periods</th></tr></thead><tbody>${f.bills.map((b) => `<tr><td>${esc(pretty(b.kind))}${b.provider ? `<div class="faint">${esc(b.provider)}</div>` : ""}${b.active ? "" : ` <span class="pill">inactive</span>`}</td><td>${esc(b.assigned_to || "—")}</td>
+    bills: () => `<h2>Bills from the app</h2>${taskTable(f.mobile_bills, f.members)}<h2>Legacy bill accounts</h2><p class="muted">Separate server records; current app bills are shown above.</p><table><thead><tr><th>Bill</th><th>Pays</th><th>Recent periods</th></tr></thead><tbody>${f.bills.map((b) => `<tr><td>${esc(pretty(b.kind))}${b.provider ? `<div class="faint">${esc(b.provider)}</div>` : ""}${b.active ? "" : ` <span class="pill">inactive</span>`}</td><td>${esc(b.assigned_to || "—")}</td>
       <td>${b.payments.map((x) => `<div>${esc(x.period)} · due ${when(x.due_date, false)} · ${money(x.amount_due)} ${statusPill(x.status)}</div>`).join("") || `<span class="muted">no periods yet</span>`}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">No bills.</td></tr>`}</tbody></table>`,
     signins: () => `<table><thead><tr><th>When</th><th>Event</th><th>Member</th><th>Detail</th></tr></thead><tbody>${f.auth_events.map((e) => `<tr><td>${when(e.at)}</td><td>${esc(pretty(e.kind))}</td><td>${esc(e.member || "—")}</td><td class="faint">${e.detail ? esc(JSON.stringify(e.detail)) : ""}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">No sign-in events.</td></tr>`}</tbody></table>`,
     issues: () => issueList(f.issues),
@@ -356,7 +374,7 @@ async function pageFamily(id, p) {
     `<div style="display:flex;gap:8px;align-items:center">${statusPill(f.status)}<button class="btn" id="setStatus">Change status</button></div>`) +
     (f.note ? `<div class="card" style="border-color:var(--warn)"><b>Status note</b> — ${esc(f.note)} <span class="faint">(${esc(f.updated_by)}, ${when(f.updated_at)})</span></div>` : "") +
     `<div class="card"><dl class="kv"><dt>Currency / timezone</dt><dd>${esc(f.currency)} · ${esc(f.timezone)}</dd><dt>Monthly grocery budget</dt><dd>${money(f.monthly_grocery_budget)}</dd></dl></div>
-    <div class="card"><div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="${k === tab ? "on" : ""}" onclick="location.hash='#/family/${esc(id)}?tab=${k}'">${l}</button>`).join("")}</div>${body}</div>`);
+    <div class="card"><div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="${k === tab ? "on" : ""}" onclick="location.hash='#/family/${esc(id)}?tab=${k}'">${l}</button>`).join("")}</div>${body}${["tasks", "posts", "lists", "bills", "signins", "audit"].includes(tab) ? pager(p, tab === "audit" ? audit.length : tab === "signins" ? f.auth_events.length : tab === "bills" ? Math.max(f.mobile_bills.length, ...f.bills.map((b) => b.payments.length)) : f[tab].length) : ""}</div>`);
   document.getElementById("setStatus").onclick = async () => {
     const v = await ask({ title: "Family status", text: "Suspended families are turned away by the app's API. Their data is not touched.",
       fields: [{ name: "status", label: "Status", type: "select", value: f.status, options: [["active", "Active"], ["under_review", "Under review"], ["suspended", "Suspended"]].map(([value, label]) => ({ value, label })) },
@@ -364,7 +382,7 @@ async function pageFamily(id, p) {
     if (v) act(`/families/${id}/status`, v, "Status saved");
   };
   wireMemberButtons(f.members);
-  wireTaskButtons(f.tasks, f.members);
+  wireTaskButtons(tab === "bills" ? f.mobile_bills : f.tasks, f.members);
   wirePostButtons();
   wireFixButtons();
 }
@@ -404,7 +422,7 @@ function taskTable(tasks, members, showFamily) {
   return `<div class="tablewrap"><table><thead><tr><th>Task</th>${showFamily ? "<th>Family</th>" : ""}<th>Status</th><th>Assigned</th><th>Due</th><th>Updated</th><th></th></tr></thead><tbody>
   ${tasks.map((t) => {
     const overdue = t.due_at && new Date(t.due_at) < new Date() && !["done", "cancelled"].includes(t.status);
-    return `<tr><td>${esc(t.title)}<div class="faint">${esc(pretty(t.category))} · by ${esc(t.created_by || "—")}${t.done_at ? " · done " + when(t.done_at) : ""}</div></td>
+    return `<tr><td>${esc(t.title)}<div class="faint">${esc(pretty(t.category))}${t.category === "Bills & Payments" && t.fields?.amount != null ? " · " + esc(t.fields.bill_type || "Bill") + " · " + money(Number(t.fields.amount)) : ""} · by ${esc(t.created_by || "—")}${t.done_at ? " · done " + when(t.done_at) : ""}</div></td>
     ${showFamily ? `<td><a href="#/family/${esc(t.household_id)}?tab=tasks">${esc(t.household)}</a></td>` : ""}
     <td>${statusPill(t.status)}${t.priority === "urgent" ? ` <span class="pill bad">urgent</span>` : ""}</td>
     <td>${t.assigned_to ? esc(t.assigned_to) : `<span class="pill warn">nobody</span>`}</td>
@@ -460,28 +478,29 @@ function wirePostButtons() {
 
 async function pageTasks(p) {
   const f = { status: p.get("status") ?? "active", household: p.get("household") || "", q: p.get("q") || "", overdue: p.get("overdue") === "true" };
-  const [tasks, fam] = await Promise.all([api("/tasks" + qs({ status: f.status, household_id: f.household, q: f.q, overdue: f.overdue })), familyOptions(f.household)]);
+  const [tasks, fam] = await Promise.all([api("/tasks" + qs({ status: f.status, household_id: f.household, q: f.q, overdue: f.overdue, offset: pageOffset(p), limit: PAGE_SIZE })), familyOptions(f.household)]);
   shell("tasks", head("Household", "Tasks", `${tasks.length} shown`) + `<div class="filters">
     <select id="ts" data-key="status" aria-label="Status"><option value="active" ${f.status === "active" ? "selected" : ""}>Not finished (any stage)</option><option value="" ${f.status === "" ? "selected" : ""}>All statuses</option>${TASK_STATUSES.map((s) => `<option value="${s}" ${f.status === s ? "selected" : ""}>${pretty(s)}</option>`).join("")}</select>
     <select id="th" data-key="household" aria-label="Family">${fam}</select>
     <input type="search" id="tq" data-key="q" placeholder="Search title" value="${esc(f.q)}" aria-label="Search title">
     <label class="muted"><input type="checkbox" id="to" data-key="overdue" ${f.overdue ? "checked" : ""}> Overdue only</label></div>
-    <div class="card">${taskTable(tasks, null, true)}</div>`);
+    <div class="card">${taskTable(tasks, null, true)}${pager(p, tasks.length)}</div>`);
   onFilters("tasks", ["ts", "th", "tq", "to"]);
   wireTaskButtons(tasks, null);
 }
 
 async function pagePosts(p) {
   const f = { status: p.get("status") || "", household: p.get("household") || "", kind: p.get("kind") || "" };
-  const [posts, fam] = await Promise.all([api("/posts" + qs({ status: f.status, household_id: f.household, kind: f.kind })), familyOptions(f.household)]);
+  const [posts, fam, activity] = await Promise.all([api("/posts" + qs({ status: f.status, household_id: f.household, kind: f.kind, offset: pageOffset(p), limit: PAGE_SIZE })), familyOptions(f.household), api("/tasks" + qs({ household_id: f.household, offset: pageOffset(p), limit: PAGE_SIZE }))]);
   const kinds = ["grocery", "task", "ticket_booking", "bill", "alert", "appointment", "errand", "shopping", "misc"];
-  shell("posts", head("Feed", "Feed posts", "What each member was sent, and whether it reached them") + `<div class="filters">
+  shell("posts", head("Feed", "Feed posts", "Synced app tasks and legacy server delivery records") + `<div class="filters">
     <select id="ps" data-key="status" aria-label="Status"><option value="">All statuses</option>${["draft", "clarifying", "ready", "published", "done", "cancelled"].map((s) => `<option ${f.status === s ? "selected" : ""}>${s}</option>`).join("")}</select>
     <select id="pk" data-key="kind" aria-label="Kind"><option value="">All kinds</option>${kinds.map((k) => `<option value="${k}" ${f.kind === k ? "selected" : ""}>${pretty(k)}</option>`).join("")}</select>
     <select id="ph" data-key="household" aria-label="Family">${fam}</select></div>
-    <div class="card">${postTable(posts, true)}</div>`);
+    <div class="card"><h2>Current app activity</h2><p class="muted">Shared tasks from the app. Delivery and read receipts are not tracked by the current app. Status and kind filters apply to legacy posts.</p>${taskTable(activity, null, true)}</div><div class="card"><h2>Legacy server posts</h2>${postTable(posts, true)}</div>${pager(p, Math.max(posts.length, activity.length))}`);
   onFilters("posts", ["ps", "pk", "ph"]);
   wirePostButtons();
+  wireTaskButtons(activity, null);
 }
 
 function issueLink(i) {
@@ -621,9 +640,9 @@ function auditTable(rows) {
   return `<div class="tablewrap"><table><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Note</th><th>Change</th></tr></thead><tbody>
   ${rows.map((a) => `<tr><td>${when(a.at)}</td><td>${esc(a.admin)}</td><td>${esc(pretty(a.action))}</td><td>${esc(a.target_kind)} <span class="faint">${esc(a.target_id)}</span>${a.household_id ? `<div><a href="#/family/${esc(a.household_id)}">${esc(a.household_id)}</a></div>` : ""}</td><td>${esc(a.note || "—")}</td><td><pre class="json">${esc(JSON.stringify(a.detail, null, 1))}</pre></td></tr>`).join("") || `<tr><td colspan="6" class="empty">No admin actions yet.</td></tr>`}</tbody></table></div>`;
 }
-async function pageAudit() {
-  const rows = await api("/audit");
-  shell("audit", head("Accountability", "Audit log", "Every change made from this console, newest first") + `<div class="card">${auditTable(rows)}</div>`);
+async function pageAudit(p) {
+  const rows = await api("/audit" + qs({ offset: pageOffset(p), limit: PAGE_SIZE }));
+  shell("audit", head("Accountability", "Audit log", "Every change made from this console, newest first") + `<div class="card">${auditTable(rows)}${pager(p, rows.length)}</div>`);
 }
 
 // ------------------------------------------------------------------ login + router
@@ -633,16 +652,16 @@ function signOut(msg) {
 }
 function renderLogin(msg) {
   root.innerHTML = `<div class="login"><form id="login"><div class="kicker">Hearth</div><h1>Admin console</h1>
-    <p class="muted" style="margin:0 0 6px">Use the ADMIN_TOKEN configured on this server. It is kept for this tab only.</p>
+    <p class="muted" style="margin:0 0 6px">Use your operator token. It is kept for this tab only.</p>
     <label for="lt" class="faint">Admin token</label><input id="lt" type="password" autocomplete="current-password" required>
-    <label for="ln" class="faint">Your name (for the audit log)</label><input id="ln" type="text" value="${esc(S.admin)}" required>
+    <label for="ln" class="faint">Name (local development only)</label><input id="ln" type="text" value="${esc(S.admin)}">
     <div class="err-text">${esc(msg && msg !== "Signed out" ? msg : "")}</div><button class="btn primary">Sign in</button></form></div>`;
   document.getElementById("login").onsubmit = async (e) => {
     e.preventDefault();
     S.token = document.getElementById("lt").value.trim();
     S.admin = document.getElementById("ln").value.trim();
     try {
-      await api("/me");
+      S.admin = (await api("/me")).admin;
       sessionSet("hearth_admin_token", S.token); sessionSet("hearth_admin_name", S.admin);
       render();
       pollWaiting();

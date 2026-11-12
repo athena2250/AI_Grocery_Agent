@@ -19,6 +19,7 @@ from app.feed.models import Post, PostRecipient, PostStatus
 from app.history.models import Purchase
 from app.memory.rules import as_utc
 from app.planner.models import GroceryList, GroceryListItem
+from app.reporting.models import ReportState
 from app.tasks.models import Task, TaskEvent, TaskStatus
 
 from .analytics import OPEN_TASK, household_statuses
@@ -108,6 +109,7 @@ def task_json(t: Task, names: dict[str, str]) -> dict[str, Any]:
         "assigned_to": names.get(t.assigned_to_member_id or ""),
         "created_by": names.get(t.created_by_member_id), "due_at": iso(t.due_at),
         "done_at": iso(t.done_at), "post_id": t.post_id, "details": t.details,
+        "fields": t.details_json.get("sync_task", {}).get("details", t.details_json),
         "created_at": iso(t.created_at), "updated_at": iso(t.updated_at),
     }
 
@@ -131,30 +133,34 @@ def _names(s: Session) -> dict[str, str]:
     return {m.id: m.name for m in s.exec(select(Member)).all()}
 
 
-def family_detail(s: Session, hid: str, now: datetime) -> dict[str, Any] | None:
+def family_detail(s: Session, hid: str, now: datetime, *, offset: int = 0,
+                  limit: int = 50) -> dict[str, Any] | None:
     h = s.get(Household, hid)
     if h is None:
         return None
     names = _names(s)
     members = s.exec(select(Member).where(Member.household_id == hid)).all()
     lists = s.exec(select(GroceryList).where(GroceryList.household_id == hid)
-                   .order_by(col(GroceryList.created_at).desc()).limit(5)).all()
+                   .order_by(col(GroceryList.created_at).desc(), GroceryList.id).offset(offset).limit(limit)).all()
     bills = s.exec(select(BillAccount).where(BillAccount.household_id == hid)).all()
     payments = s.exec(select(BillPayment).where(
         col(BillPayment.bill_account_id).in_([b.id for b in bills]))
-        .order_by(col(BillPayment.due_date).desc())).all() if bills else []
+        .order_by(col(BillPayment.due_date).desc(), BillPayment.id)).all() if bills else []
     return {
         "id": h.id, "name": h.name, "currency": h.currency, "timezone": h.timezone,
         "monthly_grocery_budget": h.monthly_grocery_budget, "created_at": iso(h.created_at),
         **_status_json(household_statuses(s).get(hid)),
         "last_activity": iso(_last_activity(s, hid)),
         "members": [member_json(s, m) for m in members],
+        "pantry": pantry(s, hid),
+        "mobile_bills": tasks(s, now, household_id=hid, category="Bills & Payments",
+                              offset=offset, limit=limit),
         "tasks": [task_json(t, names) for t in s.exec(
             select(Task).where(Task.household_id == hid)
-            .order_by(col(Task.updated_at).desc()).limit(50)).all()],
+            .order_by(col(Task.updated_at).desc(), Task.id).offset(offset).limit(limit)).all()],
         "posts": [post_json(s, p, names) for p in s.exec(
             select(Post).where(Post.household_id == hid)
-            .order_by(col(Post.created_at).desc()).limit(30)).all()],
+            .order_by(col(Post.created_at).desc(), Post.id).offset(offset).limit(limit)).all()],
         "lists": [{
             "id": lst.id, "status": lst.status.value, "created_at": iso(lst.created_at),
             "items": [{
@@ -171,20 +177,21 @@ def family_detail(s: Session, hid: str, now: datetime) -> dict[str, Any] | None:
             "payments": [{
                 "id": p.id, "period": p.period, "due_date": p.due_date.isoformat(),
                 "status": p.status.value, "amount_due": p.amount_due,
-            } for p in payments if p.bill_account_id == b.id][:6],
+            } for p in payments if p.bill_account_id == b.id][offset:offset + limit],
         } for b in bills],
         "auth_events": [{
             "at": iso(e.at), "kind": e.kind.value, "member": names.get(e.member_id or ""),
             "detail": e.detail_json,
         } for e in s.exec(select(AuthEvent).where(AuthEvent.household_id == hid)
-                          .order_by(col(AuthEvent.at).desc()).limit(30)).all()],
+                          .order_by(col(AuthEvent.at).desc(), AuthEvent.id).offset(offset).limit(limit)).all()],
         "issues": [i.as_json() for i in scan(s, now, hid)],
     }
 
 
 def tasks(
     s: Session, now: datetime, *, status: str | None = None, household_id: str | None = None,
-    q: str | None = None, overdue: bool = False, limit: int = 300,
+    q: str | None = None, overdue: bool = False, limit: int = 300, offset: int = 0,
+    category: str | None = None,
 ) -> list[dict[str, Any]]:
     query = select(Task)
     if status == "active":  # not finished: open, acknowledged or in progress
@@ -195,9 +202,11 @@ def tasks(
         query = query.where(Task.household_id == household_id)
     if q:
         query = query.where(col(Task.title).ilike(f"%{q}%"))
-    rows = s.exec(query.order_by(col(Task.updated_at).desc()).limit(limit)).all()
+    if category:
+        query = query.where(Task.category == category)
     if overdue:
-        rows = [t for t in rows if t.status in OPEN_TASK and t.due_at and as_utc(t.due_at) < now]
+        query = query.where(col(Task.status).in_(OPEN_TASK), Task.due_at < now)
+    rows = s.exec(query.order_by(col(Task.updated_at).desc(), Task.id).offset(offset).limit(limit)).all()
     names = _names(s)
     households = {h.id: h.name for h in s.exec(select(Household)).all()}
     return [{**task_json(t, names), "household": households.get(t.household_id)} for t in rows]
@@ -215,7 +224,7 @@ def task_events(s: Session, task_id: str) -> list[dict[str, Any]]:
 
 def posts(
     s: Session, *, status: str | None = None, kind: str | None = None,
-    household_id: str | None = None, limit: int = 200,
+    household_id: str | None = None, limit: int = 200, offset: int = 0,
 ) -> list[dict[str, Any]]:
     query = select(Post)
     if status:
@@ -227,10 +236,10 @@ def posts(
     names = _names(s)
     households = {h.id: h.name for h in s.exec(select(Household)).all()}
     return [{**post_json(s, p, names), "household": households.get(p.household_id)}
-            for p in s.exec(query.order_by(col(Post.created_at).desc()).limit(limit)).all()]
+            for p in s.exec(query.order_by(col(Post.created_at).desc(), Post.id).offset(offset).limit(limit)).all()]
 
 
-def audit(s: Session, household_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+def audit(s: Session, household_id: str | None = None, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
     query = select(AdminAction)
     if household_id:
         query = query.where(AdminAction.household_id == household_id)
@@ -239,4 +248,17 @@ def audit(s: Session, household_id: str | None = None, limit: int = 200) -> list
         "target_kind": a.target_kind, "target_id": a.target_id, "household_id": a.household_id,
         "note": a.note, "detail": a.detail_json,
     } for a in s.exec(query.order_by(col(AdminAction.at).desc(), col(AdminAction.id).desc())
-                      .limit(limit)).all()]
+                      .offset(offset).limit(limit)).all()]
+
+
+def pantry(s: Session, hid: str) -> list[dict[str, Any]]:
+    """Read the exact grocery reducer state used by the phones; no parallel inventory model."""
+    report = s.get(ReportState, (hid, "grocery"))
+    if report is None:
+        return []
+    products = {p["id"]: p for p in report.state.get("products", [])}
+    return [{"product_id": row["productId"],
+             "product": products.get(row["productId"], {}).get("name", row["productId"]),
+             "state": row["state"], "qty": row.get("approxQty"),
+             "unit": row.get("approxUnit"), "updated_at": row.get("updatedAt")}
+            for row in report.state.get("inventory", [])]

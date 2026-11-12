@@ -116,3 +116,21 @@ Before inviting real households, complete a two-device acceptance run on signed 
 
 Configure database backups, test a restore, and set up uptime/error monitoring with your host.
 These operational checks and signed Android/iOS testing cannot be established by unit tests.
+
+## Production web build and admin image
+
+From the repository root, build browser assets with:
+
+```bash
+EXPO_PUBLIC_API_URL=https://YOUR-API-HOST node scripts/build-web-production.cjs
+```
+
+This fails if the HTTPS API origin is missing or malformed, preventing an accidental sandbox
+release. Publish `mobile/dist` with your static host over HTTPS, then set API `CORS_ORIGINS` to
+that exact origin and run `scripts/check-deployment.py` with `--web-origin`.
+
+The admin now has its own root-context Dockerfile and named operator tokens; follow
+`admin/README.md` and `admin/.env.example`. Keep the admin behind private access. Configure
+host-managed database backups and monitoring, then perform a restore into a separate database
+and the signed two-device acceptance run above before inviting real families. Hosting accounts,
+credentials, restore evidence, and signed-device checks require the actual deployment environment.

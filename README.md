@@ -99,7 +99,9 @@ cd ../admin
 ```
 
 `pytest -m llm` in `backend/` additionally requires a running Ollama instance.
-The static web build is written to `mobile/dist/`. After editing grocery/task reducer logic, run
+The static web build is written to `mobile/dist/`. For a release, use
+`EXPO_PUBLIC_API_URL=https://YOUR-API-HOST node scripts/build-web-production.cjs`
+from the repository root; it clears cached transforms and verifies the API origin in the bundle. After editing grocery/task reducer logic, run
 `node scripts/build-reporting.cjs` from the root; CI verifies the committed reporting bundle matches.
 
 ## Repository layout
