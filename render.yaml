@@ -1,10 +1,11 @@
-# Hearth: hosted API + browser app + PostgreSQL. Admin stays on the operator's Mac.
+# Free testing deployment: API sleeps when idle; PostgreSQL expires after 30 days.
+# Admin stays on the operator's Mac. No paid resources are configured.
 # No manual secrets are required: Render generates AUTH_SECRET and wires DATABASE_URL.
 services:
   - name: hearth-api
     type: web
     runtime: docker
-    plan: 0.5c-512mb
+    plan: free
     region: singapore
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
@@ -52,6 +53,5 @@ services:
 
 databases:
   - name: hearth-db
-    plan: 0.1c-256mb
+    plan: free
     region: singapore
-    diskSizeGB: 1
