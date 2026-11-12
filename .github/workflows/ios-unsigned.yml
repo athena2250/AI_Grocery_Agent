@@ -1,0 +1,52 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_PUBLIC_API_URL: https://hearth-api-4jqh.onrender.com
+    defaults:
+      run:
+        working-directory: mobile
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install JavaScript dependencies
+        run: npm ci
+      - name: Check TypeScript and lint
+        run: npm run typecheck && npm run lint
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --no-install
+      - name: Install CocoaPods
+        run: pod install --project-directory=ios
+      - name: Build and package unsigned device app
+        run: bash ../scripts/build-ios-unsigned.sh
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hearth-unsigned-ios
+          path: mobile/build/Hearth-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-log
+          path: mobile/build/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7

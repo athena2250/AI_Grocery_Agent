@@ -19,13 +19,13 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://hearth-api.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://hearth-api-4jqh.onrender.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://hearth-api.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://hearth-api-4jqh.onrender.com"
       }
     }
   },
