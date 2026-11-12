@@ -178,6 +178,7 @@ def test_a_made_up_forwarded_for_does_not_get_round_the_ip_cap(client, monkeypat
 def test_privacy_and_health(client):
     assert "Privacy Policy" in client.get("/privacy").text
     assert client.get("/healthz").json() == {"ok": True}
+    assert client.get("/readyz").json() == {"ok": True}
 
 
 class FakeLLM:
@@ -352,3 +353,23 @@ def test_reporting_rebuilds_existing_event_log(client):
         s.commit()
         assert len(s.exec(select(Task).where(Task.household_id == hid)).all()) == 1
         assert s.get(ReportState, (hid, 'tasks')).last_seq == 1
+
+
+def test_health_probe_does_not_open_database(client):
+    from app.main import app, get_session
+
+    def unavailable_database():
+        raise RuntimeError("database unavailable")
+
+    previous = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = unavailable_database
+    try:
+        assert client.get("/healthz").json() == {"ok": True}
+        import pytest
+        with pytest.raises(RuntimeError, match="database unavailable"):
+            client.get("/readyz")
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(get_session, None)
+        else:
+            app.dependency_overrides[get_session] = previous

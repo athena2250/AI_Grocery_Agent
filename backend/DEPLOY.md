@@ -134,3 +134,21 @@ The admin now has its own root-context Dockerfile and named operator tokens; fol
 host-managed database backups and monitoring, then perform a restore into a separate database
 and the signed two-device acceptance run above before inviting real families. Hosting accounts,
 credentials, restore evidence, and signed-device checks require the actual deployment environment.
+
+## Current free deployment: Neon PostgreSQL
+
+The hosted API uses Neon project `calm-king-20620046` (`hearth` database, `production`
+branch) in Singapore. Its connection is stored only in Render's `DATABASE_URL`. The API's
+`AUTH_SECRET` is unchanged. `DATABASE_URL` uses `sync: false` in the Blueprint so subsequent
+syncs preserve the external connection; new deployments must supply their own Neon connection.
+
+`/healthz` is a database-free liveness probe for Render. `/readyz` explicitly queries PostgreSQL;
+use it for release verification, not frequent uptime polling, so the database can scale to zero.
+The deployment checker verifies both. Real user traffic and the daily retention job still query
+PostgreSQL. Monitor Neon compute, storage and transfer quotas, and export backups.
+
+The previous empty Render database is retained for rollback and expires on 12 December 2026.
+Its expiry does not affect the API after the Neon cutover. No household records existed at cutover;
+the new database initializes its schema and catalog through normal backend startup.
+For admin, use the Neon connection and the unchanged API auth secret as in `admin/README.md`.
+Never put either credential in source control or the website build.

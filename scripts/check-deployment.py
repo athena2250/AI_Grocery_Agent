@@ -13,7 +13,9 @@ base = args.api_url.rstrip('/')
 if not base.startswith('https://'):
     parser.error('Use the production HTTPS API URL')
 with urlopen(base + '/healthz', timeout=30) as response:
-    assert json.load(response) == {'ok': True}, 'API/database health failed'
+    assert json.load(response) == {'ok': True}, 'API liveness failed'
+with urlopen(base + '/readyz', timeout=30) as response:
+    assert json.load(response) == {'ok': True}, 'Database readiness failed'
 with urlopen(base + '/privacy', timeout=30) as response:
     page = response.read().decode()
     assert args.contact_email in page and '[CONTACT EMAIL]' not in page, 'Privacy contact missing'

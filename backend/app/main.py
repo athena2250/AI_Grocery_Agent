@@ -396,6 +396,13 @@ def privacy() -> str:
 
 
 @app.get("/healthz")
-def healthz(s: SessionDep) -> dict[str, bool]:
+def healthz() -> dict[str, bool]:
+    # Platform probes must not keep a scale-to-zero database awake.
+    return {"ok": True}
+
+
+@app.get("/readyz")
+def readyz(s: SessionDep) -> dict[str, bool]:
+    """Explicit database readiness check for release verification and troubleshooting."""
     s.exec(select(1)).first()
     return {"ok": True}
