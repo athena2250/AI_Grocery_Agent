@@ -1,16 +1,15 @@
-# One-click deploy of the Hearth API + its database on Render (render.com → New → Blueprint).
-# Singapore is the closest region to India. Any Docker host works too: see backend/DEPLOY.md.
-# Sign-in is name + number + a passkey the admin issues from the admin console: no SMS.
+# Hearth: hosted API + browser app + PostgreSQL. Admin stays on the operator's Mac.
+# No manual secrets are required: Render generates AUTH_SECRET and wires DATABASE_URL.
 services:
   - name: hearth-api
     type: web
     runtime: docker
     plan: 0.5c-512mb
     region: singapore
-    rootDir: ./backend
     dockerContext: ./backend
-    dockerfilePath: Dockerfile
+    dockerfilePath: ./backend/Dockerfile
     healthCheckPath: /healthz
+    autoDeployTrigger: 'off'
     envVars:
       - key: APP_ENV
         value: production
@@ -18,20 +17,48 @@ services:
         fromDatabase:
           name: hearth-db
           property: connectionString
+      - key: PUBLIC_API_URL
+        fromService:
+          name: hearth-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: CORS_ORIGINS
-        sync: false
+        fromService:
+          name: hearth-web
+          type: web
+          envVarKey: PUBLIC_WEB_URL
       - key: PRIVACY_CONTACT_EMAIL
         value: rithvika.tiruveedhula51@gmail.com
       - key: AUTH_SECRET
         generateValue: true
-      # The LLM (Ollama on a home Mac, behind scripts/share-ollama.sh). Without these the
-      # app still works: messages the phone's rules don't recognise get "say it another way".
-      - key: OLLAMA_HOST
-        sync: false
-      - key: OLLAMA_API_KEY
-        sync: false
-      - key: OLLAMA_MODEL
-        value: llama3:8b
+      # Add OLLAMA_HOST/API_KEY/MODEL later if desired; rule-based understanding works now.
+
+  - name: hearth-web
+    type: web
+    runtime: static
+    buildCommand: npm --prefix mobile ci && node scripts/build-web-production.cjs
+    staticPublishPath: ./mobile/dist
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: PUBLIC_WEB_URL
+        fromService:
+          name: hearth-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: EXPO_PUBLIC_API_URL
+        fromService:
+          name: hearth-api
+          type: web
+          envVarKey: PUBLIC_API_URL
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
 
 databases:
   - name: hearth-db
