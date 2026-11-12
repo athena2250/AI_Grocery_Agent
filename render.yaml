@@ -17,16 +17,11 @@ services:
         fromDatabase:
           name: hearth-db
           property: connectionString
-      - key: PUBLIC_API_URL
-        fromService:
-          name: hearth-api
-          type: web
-          envVarKey: RENDER_EXTERNAL_URL
       - key: CORS_ORIGINS
         fromService:
           name: hearth-web
           type: web
-          envVarKey: PUBLIC_WEB_URL
+          envVarKey: RENDER_EXTERNAL_URL
       - key: PRIVACY_CONTACT_EMAIL
         value: rithvika.tiruveedhula51@gmail.com
       - key: AUTH_SECRET
@@ -42,16 +37,11 @@ services:
     envVars:
       - key: NODE_VERSION
         value: '22'
-      - key: PUBLIC_WEB_URL
-        fromService:
-          name: hearth-web
-          type: web
-          envVarKey: RENDER_EXTERNAL_URL
       - key: EXPO_PUBLIC_API_URL
         fromService:
           name: hearth-api
           type: web
-          envVarKey: PUBLIC_API_URL
+          envVarKey: RENDER_EXTERNAL_URL
     headers:
       - path: /*
         name: X-Content-Type-Options
